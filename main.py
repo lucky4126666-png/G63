@@ -4,6 +4,9 @@ from aiogram.types import Message
 from dotenv import load_dotenv
 from panel import run
 
+if os.getenv("RAILWAY_ENVIRONMENT"):
+    print("Running on Railway")
+    
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
