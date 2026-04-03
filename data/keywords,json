@@ -5,7 +5,10 @@
       "text": "💰 联系老板",
       "files": ["test.jpg"],
       "buttons": [
-        {"text": "联系", "url": "https://t.me/abc"}
+        {
+          "text": "联系",
+          "url": "https://t.me/abc"
+        }
       ]
     }
   ]
