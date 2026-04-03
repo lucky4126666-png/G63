@@ -1,13 +1,113 @@
-<button onclick="fetch('/lock')">🔒 上课</button>
-<button onclick="fetch('/unlock')">🔓 下课</button>
+<!DOCTYPE html>
+<html>
+<head>
+<title>G63 Control</title>
 
-<form onsubmit="setPost();return false;">
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+
+<style>
+body{
+    background:#0f172a;
+    color:#fff;
+    font-family:Arial;
+}
+
+.container{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:20px;
+}
+
+.card{
+    background:#1e293b;
+    padding:20px;
+    border-radius:15px;
+    box-shadow:0 0 10px rgba(0,0,0,0.5);
+}
+
+button{
+    padding:10px 15px;
+    border:none;
+    border-radius:8px;
+    background:#22c55e;
+    color:#000;
+    margin:5px;
+    cursor:pointer;
+}
+
+input,textarea{
+    width:100%;
+    padding:8px;
+    margin:5px 0;
+    border-radius:8px;
+    border:none;
+}
+
+h2{
+    color:#38bdf8;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🚀 G63 SaaS PANEL</h1>
+
+<div class="container">
+
+<div class="card">
+<h2>🔒 Group Control</h2>
+<button onclick="fetch('/lock')">上课 Lock</button>
+<button onclick="fetch('/unlock')">下课 Unlock</button>
+</div>
+
+<div class="card">
+<h2>📢 Auto Post</h2>
 <input id="text" placeholder="公告">
 <input id="delay" placeholder="秒">
-<button>保存</button>
-</form>
+<button onclick="setPost()">保存</button>
+</div>
+
+<div class="card">
+<h2>🛑 Ban User</h2>
+<input id="ban_uid" placeholder="User ID">
+<input id="ban_gid" placeholder="Group ID">
+<button onclick="banUser()">Ban</button>
+</div>
+
+<div class="card">
+<h2>🧠 Keyword System</h2>
+<input id="key" placeholder="关键词">
+<input id="msg" placeholder="回复内容">
+<button onclick="addKey()">Add</button>
+</div>
+
+<div class="card">
+<h2>🤖 AI Control</h2>
+<button onclick="toggleAI()">Toggle AI</button>
+<button onclick="reloadConfig()">Reload</button>
+</div>
+
+<div class="card">
+<h2>📊 Stats</h2>
+<button onclick="loadStats()">Load</button>
+<pre id="stats"></pre>
+</div>
+
+<div class="card">
+<h2>⚡ Realtime Log</h2>
+<div id="log"></div>
+</div>
+
+</div>
 
 <script>
+const socket = io();
+
+socket.on("log", d=>{
+ document.getElementById("log").innerHTML += "<p>"+d.msg+"</p>"
+})
+
 function setPost(){
  fetch('/setpost',{
   method:'POST',
@@ -15,4 +115,45 @@ function setPost(){
   body:'text='+text.value+'&delay='+delay.value
  })
 }
+
+function banUser(){
+ fetch('/api/ban',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    uid:ban_uid.value,
+    gid:ban_gid.value
+  })
+ })
+}
+
+function addKey(){
+ fetch('/addkey',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    key:key.value,
+    text:msg.value
+  })
+ })
+}
+
+function toggleAI(){
+ fetch('/toggle_ai')
+}
+
+function reloadConfig(){
+ fetch('/reload')
+}
+
+function loadStats(){
+ fetch('/api/stats')
+  .then(r=>r.json())
+  .then(d=>{
+    stats.innerText = JSON.stringify(d,null,2)
+  })
+}
 </script>
+
+</body>
+</html>
