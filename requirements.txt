@@ -1,7 +1,5 @@
-aiogram==3.26.0
+aiogram
 aiohttp
-flask
-flask-socketio
 python-dotenv
+psycopg2-binary
 requests
-openai
