@@ -69,6 +69,11 @@ async def handle(request):
 async def users(request):
     return web.json_response(query("SELECT * FROM users"))
 
+async def groups(request):
+    return web.json_response(query("SELECT * FROM groups"))
+
+app.router.add_get("/api/users", users)
+app.router.add_get("/api/groups", groups)
 # ===== MAIN =====
 async def main():
     await bot.set_webhook(f"{BASE_URL}/{BOT_TOKEN}")
