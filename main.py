@@ -133,7 +133,14 @@ async def auto_post():
                     pass
 
         await asyncio.sleep(60)
-
+        
+# ===== WEBHOOK HANDLE =====
+async def handle(request):
+    data = await request.json()
+    update = types.Update(**data)
+    await dp.feed_update(bot, update)
+    return web.Response(text="OK")
+    
 # ===== MAIN =====
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
