@@ -5,6 +5,13 @@ from dotenv import load_dotenv
 import psycopg2
 import pathlib
 
+STATIC = pathlib.Path("frontend/build")
+
+async def index(request):
+    return web.FileResponse(STATIC / "index.html")
+
+app.router.add_get("/", index)
+app.router.add_static("/", STATIC)
 STATIC = pathlib.Path("build")
 
 async def index(request):
