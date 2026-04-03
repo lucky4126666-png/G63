@@ -163,8 +163,12 @@ async def main():
         logging.info("✅ Webhook set")
 
     async def on_shutdown(app):
-        await bot.delete_webhook()
-        logging.info("🛑 Webhook removed")
+    logging.info("🛑 shutting down...")
+
+    await bot.delete_webhook()
+    await bot.session.close()   # 👈 QUAN TRỌNG
+
+    logging.info("🔴 Webhook removed")
 
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
