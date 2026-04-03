@@ -1,0 +1,18 @@
+<button onclick="fetch('/lock')">🔒 上课</button>
+<button onclick="fetch('/unlock')">🔓 下课</button>
+
+<form onsubmit="setPost();return false;">
+<input id="text" placeholder="公告">
+<input id="delay" placeholder="秒">
+<button>保存</button>
+</form>
+
+<script>
+function setPost(){
+ fetch('/setpost',{
+  method:'POST',
+  headers:{'Content-Type':'application/x-www-form-urlencoded'},
+  body:'text='+text.value+'&delay='+delay.value
+ })
+}
+</script>
