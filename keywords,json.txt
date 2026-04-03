@@ -1,0 +1,12 @@
+{
+  "-1001234567890": [
+    {
+      "key": "买",
+      "text": "💰 联系老板",
+      "files": ["test.jpg"],
+      "buttons": [
+        {"text": "联系", "url": "https://t.me/abc"}
+      ]
+    }
+  ]
+}
