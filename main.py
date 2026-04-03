@@ -138,17 +138,50 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
 
     asyncio.create_task(auto_post())
-
     threading.Thread(target=run, daemon=True).start()
 
-    print("SYSTEM RUNNING")
+    print("🚀 SYSTEM RUNNING (WEBHOOK MODE)")
 
+    app = web.Application(client_max_size=1024**2)
+
+    app.router.add_post(f"/{BOT_TOKEN}", handle)
+    app.router.add_get("/", health)
+
+    async def on_startup(app):
+        await bot.set_webhook(
+            url=f"{BASE_URL}/{BOT_TOKEN}",
+            drop_pending_updates=True
+        )
+        logging.info("✅ Webhook set")
+
+    async def on_shutdown(app):
+        await bot.delete_webhook()
+        logging.info("🛑 Webhook removed")
+
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    port = int(os.getenv("PORT", 8080))
+
+    site = web.TCPSite(
+        runner,
+        "0.0.0.0",
+        port,
+        reuse_address=True,
+        reuse_port=True
+    )
+
+    await site.start()
+
+    logging.info(f"🌍 Server running on port {port}")
+
+    # giữ sống
     while True:
-        try:
-            await dp.start_polling(bot)
-        except Exception as e:
-            print("RESTART:", e)
-            await asyncio.sleep(5)
+        await asyncio.sleep(3600)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
