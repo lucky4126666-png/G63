@@ -88,7 +88,34 @@ def api_groups():
 @app.route("/api/rep")
 def api_rep():
     return jsonify(load("rep.json"))
+@app.route("/lock")
+def lock():
+    g = load("groups.json")
+    for gid in g:
+        g[gid]["lock"] = True
+    save("groups.json", g)
+    return "OK"
 
+@app.route("/unlock")
+def unlock():
+    g = load("groups.json")
+    for gid in g:
+        g[gid]["lock"] = False
+    save("groups.json", g)
+    return "OK"
+
+@app.route("/setpost", methods=["POST"])
+def setpost():
+    text = request.form.get("text")
+    delay = int(request.form.get("delay",60))
+
+    t = load("post_template.json")
+    for gid in load("groups.json"):
+        t[gid] = {"text":text,"delay":delay}
+
+    save("post_template.json", t)
+    return "OK"
+    
 # ===== CONTROL =====
 @app.route("/api/lock", methods=["POST"])
 def lock_group():
