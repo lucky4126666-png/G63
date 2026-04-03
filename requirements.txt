@@ -1,7 +1,7 @@
 aiogram==3.26.0
+aiohttp
 flask
 flask-socketio
 python-dotenv
 requests
-werkzeug
 openai
