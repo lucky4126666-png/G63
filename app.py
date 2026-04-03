@@ -3,7 +3,15 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from dotenv import load_dotenv
 import psycopg2
+import pathlib
 
+STATIC = pathlib.Path("build")
+
+async def index(request):
+    return web.FileResponse(STATIC/"index.html")
+
+app.router.add_get("/", index)
+app.router.add_static("/", STATIC)
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
