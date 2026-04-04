@@ -8,11 +8,9 @@ from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.filters import Command
-
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
 
 import uvicorn
 
@@ -50,11 +48,10 @@ def load_keywords():
     cur.execute("SELECT trigger, response FROM keywords")
     data = cur.fetchall()
     conn.close()
-
     KEYWORDS_CACHE = {k: v for k, v in data}
     print("🔥 Loaded", len(KEYWORDS_CACHE), "keywords")
 
-def add_keyword_db(trigger, response):
+def add_keyword(trigger, response):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -67,15 +64,23 @@ def add_keyword_db(trigger, response):
     conn.close()
     load_keywords()
 
+def delete_keyword(trigger):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM keywords WHERE trigger=%s", (trigger,))
+    conn.commit()
+    conn.close()
+    load_keywords()
+
 # ===== ADMIN =====
 ADMIN_IDS = [8655755346]
 
 def is_admin(uid):
     return uid in ADMIN_IDS
 
-# ===== BOT + STORAGE =====
+# ===== BOT =====
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())  # 🔥 FIX FSM
+dp = Dispatcher(storage=MemoryStorage())
 
 # ===== FSM =====
 class AdminState(StatesGroup):
@@ -86,31 +91,65 @@ class AdminState(StatesGroup):
 # ===== MENU =====
 def menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Thêm", callback_data="add")],
+        [InlineKeyboardButton(text="➕ Thêm keyword", callback_data="add")],
         [InlineKeyboardButton(text="📋 Danh sách", callback_data="list")],
-        [InlineKeyboardButton(text="🗑️ Xoá", callback_data="delete")],
+        [InlineKeyboardButton(text="🗑️ Xoá keyword", callback_data="delete")],
         [InlineKeyboardButton(text="📊 Stats", callback_data="stats")]
     ])
 
-# ===== START =====
-@dp.message(Command("start"))
-async def start(msg: Message):
-    await msg.answer("🤖 Bot đang hoạt động")
+# ===== FORCE ADMIN COMMAND (FIX 100%) =====
+@dp.message()
+async def router(msg: Message, state: FSMContext):
+    if not msg.text:
+        return
 
-# ===== ADMIN MENU =====
-@dp.message(Command("admin"))
-async def admin(msg: Message):
-    print("ADMIN HIT:", msg.from_user.id)
+    text = msg.text.strip()
 
-    if not is_admin(msg.from_user.id):
-        return await msg.answer(f"❌ Không có quyền\nID: {msg.from_user.id}")
+    # ===== ADMIN MENU =====
+    if text == "/admin":
+        if not is_admin(msg.from_user.id):
+            return await msg.answer(f"❌ Không có quyền\nID: {msg.from_user.id}")
+        return await msg.answer("⚙️ ADMIN PANEL", reply_markup=menu())
 
-    await msg.answer("⚙️ ADMIN PANEL", reply_markup=menu())
+    # ===== FSM FLOW =====
+    current = await state.get_state()
+
+    if current == AdminState.key:
+        await state.update_data(key=text)
+        await msg.answer("👉 Nhập nội dung:")
+        return await state.set_state(AdminState.value)
+
+    if current == AdminState.value:
+        data = await state.get_data()
+        add_keyword(data["key"].lower(), text)
+        await msg.answer("✅ Đã thêm")
+        return await state.clear()
+
+    if current == AdminState.delete:
+        delete_keyword(text)
+        await msg.answer("🗑️ Đã xoá")
+        return await state.clear()
+
+    # ===== AUTO REPLY =====
+    if text.startswith("/"):
+        return
+
+    text_lower = text.lower()
+
+    for k, v in KEYWORDS_CACHE.items():
+        if k in text_lower:
+            return await msg.reply(v)
+
+    # anti link
+    if "http" in text_lower or "t.me" in text_lower:
+        try:
+            await msg.delete()
+        except:
+            pass
 
 # ===== CALLBACK =====
-@dp.callback_query(lambda c: c.data in ["add", "list", "delete", "stats"])
-async def menu_handler(cb: CallbackQuery, state: FSMContext):
-
+@dp.callback_query()
+async def callback(cb: CallbackQuery, state: FSMContext):
     if not is_admin(cb.from_user.id):
         return
 
@@ -127,50 +166,7 @@ async def menu_handler(cb: CallbackQuery, state: FSMContext):
         await state.set_state(AdminState.delete)
 
     elif cb.data == "stats":
-        await cb.message.answer(f"📊 Tổng: {len(KEYWORDS_CACHE)}")
-
-# ===== ADD FLOW =====
-@dp.message(AdminState.key)
-async def get_key(msg: Message, state: FSMContext):
-    await state.update_data(key=msg.text)
-    await msg.answer("👉 Nhập nội dung:")
-    await state.set_state(AdminState.value)
-
-@dp.message(AdminState.value)
-async def get_value(msg: Message, state: FSMContext):
-    data = await state.get_data()
-    add_keyword_db(data["key"].lower(), msg.text)
-    await msg.answer("✅ Đã thêm")
-    await state.clear()
-
-# ===== DELETE =====
-@dp.message(AdminState.delete)
-async def delete(msg: Message, state: FSMContext):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM keywords WHERE trigger=%s", (msg.text,))
-    conn.commit()
-    conn.close()
-
-    load_keywords()
-    await msg.answer("🗑️ Đã xoá")
-    await state.clear()
-
-# ===== AUTO REPLY =====
-@dp.message()
-async def auto(msg: Message):
-    if not msg.text:
-        return
-
-    # 🔥 FIX: không chặn command nữa
-    if msg.text.startswith("/"):
-        return
-
-    text = msg.text.lower()
-
-    for k, v in KEYWORDS_CACHE.items():
-        if k in text:
-            return await msg.reply(v)
+        await cb.message.answer(f"📊 Tổng keyword: {len(KEYWORDS_CACHE)}")
 
 # ===== FASTAPI =====
 app = FastAPI()
@@ -186,7 +182,7 @@ def home():
 
 # ===== MAIN =====
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)  # 🔥 FIX conflict
+    await bot.delete_webhook(drop_pending_updates=True)
 
     bot_task = asyncio.create_task(dp.start_polling(bot))
 
