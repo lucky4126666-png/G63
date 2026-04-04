@@ -15,8 +15,8 @@ DB_URL = os.getenv("DATABASE_URL")
 print("DB_URL =", DB_URL)
 
 # ===== DB CONNECT RETRY =====
-    def connect_db():
-    for i in range(30):  # tăng lên 30 lần
+def connect_db():
+    for i in range(30):
         try:
             print("🔌 Connecting DB...")
             return psycopg2.connect(DB_URL, sslmode="require")
