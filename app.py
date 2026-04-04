@@ -51,10 +51,20 @@ def ai_detect(text):
 
 # ===== BOT HANDLER =====
 @dp.message()
-async def handler(m: types.Message):
-    text = (m.text or "").lower()
-    uid = m.from_user.id
+def save_user(telegram_id, username):
+    conn = connect_db()
+    cur = conn.cursor()
 
+    cur.execute("""
+        INSERT INTO users (telegram_id, username)
+        VALUES (%s, %s)
+        ON CONFLICT (telegram_id) DO NOTHING;
+    """, (telegram_id, username))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    
     # save user
     query("INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING", (uid,))
 
