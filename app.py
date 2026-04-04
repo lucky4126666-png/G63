@@ -14,6 +14,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://your-app.up.railway.app
 DB_URL = os.getenv("DATABASE_URL")
 
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
 PORT = int(os.getenv("PORT", 8080))
 
 # ===== INIT BOT =====
@@ -22,9 +25,13 @@ dp = Dispatcher()
 router = Router()
 
 # ===== DB CONNECT =====
-def connect_db():
-    return psycopg2.connect(DB_URL)
+DB_URL = os.getenv("DATABASE_URL")
 
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
+def connect_db():
+    return psycopg2.connect(DB_URL, sslmode="require")
 # ===== SAVE USER =====
 def save_user(telegram_id, username):
     conn = connect_db()
