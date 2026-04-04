@@ -1,37 +1,74 @@
+import os
 import asyncio
+import logging
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from openai import OpenAI
+from aiogram.types import Message
+from dotenv import load_dotenv
 
-BOT_TOKEN = "8595583672:AAGqM7EnDeTRiKEHZxQpZGIETYvHhX-NKxc"
-OPENAI_KEY = "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"
+# ===== LOAD ENV =====
+load_dotenv()
 
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# ===== LOG =====
+logging.basicConfig(level=logging.INFO)
+
+# ===== INIT BOT =====
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-client = OpenAI(api_key=OPENAI_KEY)
 
+# ===== MEMORY DB (simple) =====
+users = {}
+
+# ===== BOT COMMAND =====
 @dp.message()
-async def chat(message: types.Message):
-    try:
-        await message.answer("🤖 đang suy nghĩ...")
+async def handle_message(message: Message):
+    text = message.text.lower()
 
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": message.text}]
-        )
+    if text == "ping":
+        await message.answer("pong 🏓")
 
-        await message.answer(res.choices[0].message.content)
+    elif text.startswith("set "):
+        key = text.replace("set ", "")
+        users[message.from_user.id] = key
+        await message.answer(f"✅ Đã lưu: {key}")
 
-    except Exception as e:
-        await message.answer(f"❌ lỗi: {e}")
+    elif text == "get":
+        val = users.get(message.from_user.id, "chưa có dữ liệu")
+        await message.answer(f"📦 Data: {val}")
 
-async def main():
-    print("🔥 BOT OK")
+    else:
+        await message.answer("🤖 Bot VIP đang chạy!")
+
+# ===== WEB ADMIN =====
+async def index(request):
+    html = """
+    <html>
+    <head><title>BOT VIP</title></head>
+    <body style="font-family:sans-serif">
+        <h1>🚀 BOT VIP DASHBOARD</h1>
+        <p>Status: ONLINE</p>
+        <p>Total Users: %d</p>
+    </body>
+    </html>
+    """ % len(users)
+    return web.Response(text=html, content_type="text/html")
+
+app = web.Application()
+app.router.add_get("/", index)
+
+# ===== MAIN =====
+async def start_bot():
+    print("🔥 Bot started...")
     await dp.start_polling(bot)
 
-asyncio.run(main())
+# ===== RUN =====
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+
+    # chạy bot song song web
+    loop.create_task(start_bot())
+
+    port = int(os.getenv("PORT", 8080))
+    web.run_app(app, host="0.0.0.0", port=port)
