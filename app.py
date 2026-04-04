@@ -4,7 +4,9 @@ from aiogram import Bot, Dispatcher, types
 from dotenv import load_dotenv
 import psycopg2
 import pathlib
+import os
 
+print("DB_URL =", os.getenv("DATABASE_URL"))
 # ===== ENV =====
 load_dotenv()
 
