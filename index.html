@@ -1,26 +1,42 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>Bot Admin</title>
-</head>
 <body>
-  <h2>Thêm keyword</h2>
 
-  <input id="key" placeholder="trigger">
-  <input id="value" placeholder="response">
-  <button onclick="add()">Add</button>
+<h2>SaaS Bot Dashboard</h2>
 
-  <script>
-    async function add() {
-      const key = document.getElementById("key").value
-      const value = document.getElementById("value").value
+<input id="user" placeholder="username">
+<input id="pass" placeholder="password">
+<button onclick="register()">Register</button>
 
-      await fetch("/add?trigger=" + key + "&response=" + value, {
-        method: "POST"
-      })
+<hr>
 
-      alert("Added!")
-    }
-  </script>
+<input id="uid" placeholder="user_id">
+<input id="token" placeholder="bot token">
+<button onclick="createBot()">Create Bot</button>
+
+<hr>
+
+<input id="bid" placeholder="bot_id">
+<input id="key" placeholder="keyword">
+<input id="res" placeholder="response">
+<button onclick="addKey()">Add Keyword</button>
+
+<script>
+async function register(){
+  await fetch("/register?username="+user.value+"&password="+pass.value,{method:"POST"})
+  alert("ok")
+}
+
+async function createBot(){
+  await fetch("/create-bot?user_id="+uid.value+"&token="+token.value,{method:"POST"})
+  alert("bot created")
+}
+
+async function addKey(){
+  await fetch(`/add-key?bot_id=${bid.value}&trigger=${key.value}&response=${res.value}`,{method:"POST"})
+  alert("added")
+}
+</script>
+
 </body>
 </html>
