@@ -1,25 +1,41 @@
 import asyncio
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
+from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode
+from openai import OpenAI
 
-from core.db import connect_db
-from core.bot_manager import load_all_bots
+# ===== CONFIG =====
+BOT_TOKEN = "DÁN_TOKEN_BOT_VÀO_ĐÂY"
+OPENAI_KEY = "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"
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("🚀 G63 SYSTEM STARTING...")
+bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+dp = Dispatcher()
 
-    await connect_db()
-    await load_all_bots()
+client = OpenAI(api_key=OPENAI_KEY)
 
-    print("✅ ALL BOTS ONLINE")
+# ===== HANDLER =====
+@dp.message()
+async def chat(message: types.Message):
+    try:
+        await message.answer("🤖 đang suy nghĩ...")
 
-    yield
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "user", "content": message.text}
+            ]
+        )
 
-    print("🛑 SYSTEM SHUTDOWN")
+        reply = res.choices[0].message.content
 
-app = FastAPI(lifespan=lifespan)
+        await message.answer(reply)
 
-@app.get("/")
-async def home():
-    return {"status": "G63 VIP RUNNING"}
+    except Exception as e:
+        await message.answer(f"❌ lỗi: {e}")
+
+# ===== MAIN =====
+async def main():
+    print("🔥 BOT ĐANG CHẠY...")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
