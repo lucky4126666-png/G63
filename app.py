@@ -2,11 +2,10 @@ import os
 import asyncio
 import time
 import pathlib
-import requests
+import psycopg2
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from dotenv import load_dotenv
-import psycopg2
 
 # ===== ENV =====
 load_dotenv()
@@ -15,28 +14,37 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
 DB_URL = os.getenv("DATABASE_URL")
 
-print("DB_URL =", DB_URL)
+print("DB_URL =", DB_URL[:30] + "..." if DB_URL else "None")
 
 # ===== DB CONNECT (RETRY + SSL) =====
-import time
-
 def connect_db():
     for i in range(10):
         try:
             print("🔌 Connecting DB...")
-            return psycopg2.connect(DB_URL)
+            return psycopg2.connect(
+                DB_URL,
+                sslmode="require"   # 👈 bắt buộc Railway
+            )
         except Exception as e:
             print("❌ DB fail, retry...", e)
             time.sleep(2)
+
     raise Exception("DB connect failed")
 
-conn = connect_db()
-cur = conn.cursor()
-
+# ===== QUERY (NO GLOBAL CONNECTION) =====
 def query(q, v=None):
+    conn = connect_db()
+    cur = conn.cursor()
+
     cur.execute(q, v or ())
     conn.commit()
-    return cur.fetchall() if cur.description else None
+
+    result = cur.fetchall() if cur.description else None
+
+    cur.close()
+    conn.close()
+
+    return result
 
 # ===== BOT =====
 bot = Bot(BOT_TOKEN)
@@ -53,34 +61,59 @@ async def handler(m: types.Message):
     text = (m.text or "").lower()
     uid = m.from_user.id
 
-    # save user
-    query("INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING", (uid,))
+    try:
+        # save user
+        query(
+            "INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING",
+            (uid,)
+        )
+    except Exception as e:
+        print("DB insert error:", e)
 
     # AI ban
     if ai_detect(text):
-        await m.delete()
-        await bot.ban_chat_member(m.chat.id, uid)
+        try:
+            await m.delete()
+            await bot.ban_chat_member(m.chat.id, uid)
+        except Exception as e:
+            print("Ban error:", e)
 
 # ===== WEBHOOK =====
 async def handle(request):
-    data = await request.json()
-    update = types.Update(**data)
-    await dp.feed_update(bot, update)
+    try:
+        data = await request.json()
+        update = types.Update(**data)
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        print("Webhook error:", e)
+
     return web.Response(text="OK")
 
 # ===== API =====
 async def users(request):
-    return web.json_response(query("SELECT * FROM users"))
+    try:
+        data = query("SELECT * FROM users")
+        return web.json_response(data)
+    except Exception as e:
+        return web.json_response({"error": str(e)})
 
 async def groups(request):
-    return web.json_response(query("SELECT * FROM groups"))
+    try:
+        data = query("SELECT * FROM groups")
+        return web.json_response(data)
+    except Exception as e:
+        return web.json_response({"error": str(e)})
 
 # ===== MAIN =====
 async def main():
     print("🔥 STARTING SERVER...")
 
-    # set webhook
-    await bot.set_webhook(f"{BASE_URL}/{BOT_TOKEN}")
+    # ===== SET WEBHOOK =====
+    try:
+        await bot.set_webhook(f"{BASE_URL}/{BOT_TOKEN}")
+        print("✅ Webhook set")
+    except Exception as e:
+        print("❌ Webhook error:", e)
 
     app = web.Application()
 
@@ -107,7 +140,7 @@ async def main():
 
     await site.start()
 
-    print("🚀 SERVER RUNNING")
+    print(f"🚀 SERVER RUNNING ON PORT {port}")
 
     while True:
         await asyncio.sleep(3600)
