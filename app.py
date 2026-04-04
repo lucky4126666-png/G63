@@ -21,23 +21,40 @@ logging.basicConfig(level=logging.INFO)
 def get_conn():
     return psycopg2.connect(DATABASE_URL)
 
-def get_keywords():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT trigger, response FROM keywords")
-    data = cur.fetchall()
-    conn.close()
-    return {k: v for k, v in data}
+# ===== CACHE (SIÊU QUAN TRỌNG) =====
+KEYWORDS_CACHE = {}
+
+def load_keywords():
+    global KEYWORDS_CACHE
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT trigger, response FROM keywords")
+        data = cur.fetchall()
+        conn.close()
+
+        KEYWORDS_CACHE = {k: v for k, v in data}
+        print(f"🔥 Loaded {len(KEYWORDS_CACHE)} keywords")
+
+    except Exception as e:
+        print("DB ERROR:", e)
 
 def add_keyword_db(trigger, response):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO keywords (trigger, response) VALUES (%s, %s) ON CONFLICT (trigger) DO UPDATE SET response = EXCLUDED.response",
+        """
+        INSERT INTO keywords (trigger, response)
+        VALUES (%s, %s)
+        ON CONFLICT (trigger)
+        DO UPDATE SET response = EXCLUDED.response
+        """,
         (trigger, response)
     )
     conn.commit()
     conn.close()
+
+    load_keywords()  # reload cache ngay
 
 # ===== BOT =====
 bot = Bot(token=BOT_TOKEN)
@@ -45,30 +62,38 @@ dp = Dispatcher()
 
 @dp.message(Command("start"))
 async def start(message: Message):
-    await message.answer("🤖 Bot full system đang chạy!")
+    await message.answer("🤖 Bot Trung Quốc PRO đã online!")
 
+# ===== AUTO REPLY =====
 @dp.message()
 async def auto_reply(message: Message):
-    if not message.text:
-        return
-
-    text = message.text.lower()
-    keywords = get_keywords()
-
-    for key, response in keywords.items():
-        if key in text:
-            await message.reply(response)
+    try:
+        if not message.text:
             return
 
-    # anti link
-    if "http" in text or "t.me" in text:
-        try:
+        text = message.text.lower()
+
+        # ⚡ check keyword từ cache (cực nhanh)
+        for key, response in KEYWORDS_CACHE.items():
+            if key in text:
+                await message.reply(response)
+                return
+
+        # 🚫 anti link
+        if "http" in text or "t.me" in text:
             await message.delete()
-        except:
-            pass
+            return
+
+    except Exception as e:
+        print("BOT ERROR:", e)
 
 # ===== FASTAPI =====
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup():
+    print("🚀 Server starting...")
+    load_keywords()
 
 @app.get("/")
 def home():
@@ -79,17 +104,16 @@ def add(trigger: str, response: str):
     add_keyword_db(trigger, response)
     return {"msg": "added"}
 
-# ===== RUN =====
-import asyncio
-import uvicorn
-
+# ===== MAIN (QUAN TRỌNG NHẤT) =====
 async def main():
-    # chạy bot song song với API
+    # 🔥 fix webhook conflict
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    # chạy bot + API song song
     bot_task = asyncio.create_task(dp.start_polling(bot))
-    
+
     config = uvicorn.Config(app, host="0.0.0.0", port=8080)
     server = uvicorn.Server(config)
-
     api_task = asyncio.create_task(server.serve())
 
     await asyncio.gather(bot_task, api_task)
