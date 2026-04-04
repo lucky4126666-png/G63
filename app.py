@@ -64,6 +64,12 @@ def save_user(telegram_id, username):
     conn.commit()
     cur.close()
     conn.close()
+
+
+@dp.message_handler(commands=['start'])
+async def start(msg: types.Message):
+    save_user(msg.from_user.id, msg.from_user.username)
+    await msg.answer("Bot đang hoạt động 🚀")
     
     # save user
     query("INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING", (uid,))
