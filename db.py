@@ -1,9 +1,7 @@
-import psycopg2, os
+import psycopg2
+import os
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-cur = conn.cursor()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-def query(q, v=None):
-    cur.execute(q, v or ())
-    conn.commit()
-    return cur.fetchall() if cur.description else None
+def get_conn():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
