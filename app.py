@@ -1,9 +1,12 @@
-import os, asyncio, requests, time
+import os
+import asyncio
+import time
+import pathlib
+import requests
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from dotenv import load_dotenv
 import psycopg2
-import pathlib
 
 # ===== ENV =====
 load_dotenv()
@@ -14,22 +17,20 @@ DB_URL = os.getenv("DATABASE_URL")
 
 print("DB_URL =", DB_URL)
 
-# ===== DB CONNECT RETRY =====
+# ===== DB CONNECT (RETRY + SSL) =====
 def connect_db():
     for i in range(30):
         try:
             print("🔌 Connecting DB...")
-            return psycopg2.connect(DB_URL, sslmode="require")
+            conn = psycopg2.connect(DB_URL, sslmode="require")
+            print("✅ DB Connected")
+            return conn
         except Exception as e:
             print("❌ DB fail, retry...", e)
             time.sleep(2)
     raise Exception("DB connect failed")
-# ===== BOT =====
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
 
-# ===== DB =====
-conn = psycopg2.connect(DB_URL)
+conn = connect_db()
 cur = conn.cursor()
 
 def query(q, v=None):
@@ -37,9 +38,13 @@ def query(q, v=None):
     conn.commit()
     return cur.fetchall() if cur.description else None
 
-# ===== AI =====
+# ===== BOT =====
+bot = Bot(BOT_TOKEN)
+dp = Dispatcher()
+
+# ===== AI FILTER =====
 def ai_detect(text):
-    bad = ["airdrop","free","赚"]
+    bad = ["airdrop", "free", "赚"]
     return any(w in text for w in bad)
 
 # ===== BOT HANDLER =====
@@ -49,7 +54,7 @@ async def handler(m: types.Message):
     uid = m.from_user.id
 
     # save user
-    query("INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING",(uid,))
+    query("INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING", (uid,))
 
     # AI ban
     if ai_detect(text):
@@ -72,12 +77,14 @@ async def groups(request):
 
 # ===== MAIN =====
 async def main():
+    print("🔥 STARTING SERVER...")
 
+    # set webhook
     await bot.set_webhook(f"{BASE_URL}/{BOT_TOKEN}")
 
     app = web.Application()
 
-    # ===== STATIC (React build) =====
+    # ===== STATIC =====
     STATIC = pathlib.Path("frontend/build")
 
     async def index(request):
@@ -105,6 +112,6 @@ async def main():
     while True:
         await asyncio.sleep(3600)
 
+# ===== START =====
 if __name__ == "__main__":
-    print("🔥 STARTING SERVER...")   # 👈 thêm dòng này
     asyncio.run(main())
