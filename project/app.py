@@ -4,7 +4,7 @@ from aiogram.enums import ParseMode
 from openai import OpenAI
 
 # ===== CONFIG =====
-BOT_TOKEN = "DÁN_TOKEN_BOT_VÀO_ĐÂY"
+BOT_TOKEN = "8595583672:AAGqM7EnDeTRiKEHZxQpZGIETYvHhX-NKxc"
 OPENAI_KEY = "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"
 
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
