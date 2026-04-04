@@ -1,6 +1,5 @@
-aiogram
 aiohttp
+aiogram
 python-dotenv
 psycopg2-binary
 requests
-openai
