@@ -66,8 +66,14 @@ def save_user(telegram_id, username):
     conn.close()
 
 
-@dp.message_handler(commands=['start'])
-async def start(msg: types.Message):
+from aiogram import Router
+from aiogram.types import Message
+from aiogram.filters import Command
+
+router = Router()
+
+@router.message(Command("start"))
+async def start(msg: Message):
     save_user(msg.from_user.id, msg.from_user.username)
     await msg.answer("Bot đang hoạt động 🚀")
     
