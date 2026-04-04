@@ -13,21 +13,27 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 DB_URL = os.getenv("DATABASE_URL")
 
-if DB_URL.startswith("postgres://"):
+# Fix postgres:// -> postgresql://
+if DB_URL and DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
 PORT = int(os.getenv("PORT", 8080))
 
-# ===== INIT BOT =====
+# ===== INIT =====
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-# ===== DB CONNECT =====
+# ===== DB =====
 def connect_db():
-    return psycopg2.connect(DB_URL, sslmode="require")
+    try:
+        conn = psycopg2.connect(DB_URL, sslmode="require")
+        print("✅ DB Connected")
+        return conn
+    except Exception as e:
+        print("❌ DB ERROR:", e)
+        raise
 
-# ===== SAVE USER =====
 def save_user(telegram_id, username):
     conn = connect_db()
     cur = conn.cursor()
@@ -45,27 +51,26 @@ def save_user(telegram_id, username):
 # ===== HANDLER =====
 @router.message(Command("start"))
 async def start_handler(msg: Message):
-    print("USER HIT /start")
+    print("👤 USER:", msg.from_user.id)
 
     save_user(msg.from_user.id, msg.from_user.username)
 
     await msg.answer("Bot đang hoạt động 🚀")
 
-# ===== REGISTER ROUTER =====
 dp.include_router(router)
 
-# ===== WEBHOOK HANDLER =====
+# ===== WEBHOOK =====
 async def handle_webhook(request):
     try:
         data = await request.json()
         update = Update(**data)
         await dp.feed_update(bot, update)
     except Exception as e:
-        print("ERROR:", e)
+        print("❌ WEBHOOK ERROR:", e)
 
     return web.Response()
 
-# ===== HEALTH CHECK =====
+# ===== ROUTES =====
 async def index(request):
     return web.Response(text="Bot is running 🚀")
 
@@ -73,17 +78,21 @@ async def index(request):
 async def on_startup(app):
     print("🔥 STARTING SERVER...")
 
+    if not WEBHOOK_URL:
+        raise ValueError("❌ WEBHOOK_URL chưa set")
+
     webhook = f"{WEBHOOK_URL}/webhook"
+
     await bot.set_webhook(webhook)
 
-    print("✅ Webhook set:", webhook)
+    print("✅ Webhook:", webhook)
 
-# ===== SHUTDOWN (FIX LỖI CRASH) =====
+# ===== SHUTDOWN =====
 async def on_shutdown(app):
-    print("🛑 Shutting down...")
+    print("🛑 Shutdown...")
     await bot.session.close()
 
-# ===== MAIN APP =====
+# ===== MAIN =====
 def main():
     app = web.Application()
 
@@ -91,7 +100,7 @@ def main():
     app.router.add_post("/webhook", handle_webhook)
 
     app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)  # 👈 QUAN TRỌNG
+    app.on_shutdown.append(on_shutdown)
 
     web.run_app(app, host="0.0.0.0", port=PORT)
 
