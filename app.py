@@ -18,13 +18,13 @@ DB_URL = os.getenv("DATABASE_URL")
 print("DB_URL =", DB_URL)
 
 # ===== DB CONNECT (RETRY + SSL) =====
+import time
+
 def connect_db():
-    for i in range(30):
+    for i in range(10):
         try:
             print("🔌 Connecting DB...")
-            conn = psycopg2.connect(DB_URL, sslmode="require")
-            print("✅ DB Connected")
-            return conn
+            return psycopg2.connect(DB_URL)
         except Exception as e:
             print("❌ DB fail, retry...", e)
             time.sleep(2)
