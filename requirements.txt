@@ -1,5 +1,3 @@
-fastapi
-uvicorn
-asyncpg
 aiogram
-openai
+aiohttp
+python-dotenv
