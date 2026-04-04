@@ -3,7 +3,7 @@ import asyncio
 import logging
 import psycopg2
 from fastapi import FastAPI
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import Command
 from dotenv import load_dotenv
@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 def get_conn():
     return psycopg2.connect(DATABASE_URL)
 
-# ===== CACHE (SIÊU QUAN TRỌNG) =====
+# ===== CACHE =====
 KEYWORDS_CACHE = {}
 
 def load_keywords():
@@ -54,7 +54,7 @@ def add_keyword_db(trigger, response):
     conn.commit()
     conn.close()
 
-    load_keywords()  # reload cache ngay
+    load_keywords()
 
 # ===== BOT =====
 bot = Bot(token=BOT_TOKEN)
@@ -64,7 +64,6 @@ dp = Dispatcher()
 async def start(message: Message):
     await message.answer("🤖 Bot Trung Quốc PRO đã online!")
 
-# ===== AUTO REPLY =====
 @dp.message()
 async def auto_reply(message: Message):
     try:
@@ -73,16 +72,18 @@ async def auto_reply(message: Message):
 
         text = message.text.lower()
 
-        # ⚡ check keyword từ cache (cực nhanh)
+        # ⚡ trả lời keyword
         for key, response in KEYWORDS_CACHE.items():
             if key in text:
                 await message.reply(response)
                 return
 
-        # 🚫 anti link
+        # 🚫 chặn link
         if "http" in text or "t.me" in text:
-            await message.delete()
-            return
+            try:
+                await message.delete()
+            except:
+                pass
 
     except Exception as e:
         print("BOT ERROR:", e)
@@ -99,20 +100,26 @@ async def startup():
 def home():
     return {"status": "ok"}
 
+# 👉 dùng GET cho dễ test
 @app.get("/add")
 def add(trigger: str, response: str):
+    add_keyword_db(trigger, response)
     return {"msg": "added"}
 
-# ===== MAIN (QUAN TRỌNG NHẤT) =====
+# ===== MAIN =====
 async def main():
-    # 🔥 fix webhook conflict
+    # 🔥 FIX conflict Telegram
     await bot.delete_webhook(drop_pending_updates=True)
 
-    # chạy bot + API song song
+    # chạy bot
     bot_task = asyncio.create_task(dp.start_polling(bot))
 
-    config = uvicorn.Config(app, host="0.0.0.0", port=8080)
+    # ⚠️ PORT Railway
+    port = int(os.environ.get("PORT", 8080))
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=port)
     server = uvicorn.Server(config)
+
     api_task = asyncio.create_task(server.serve())
 
     await asyncio.gather(bot_task, api_task)
