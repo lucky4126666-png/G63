@@ -1,224 +1,137 @@
-import os, asyncio, json, re, time, threading, logging, requests
-from aiohttp import web
-from aiogram import Bot, Dispatcher, Router, types
+import os
+import asyncio
+import logging
+import psycopg2
+from fastapi import FastAPI
+from aiogram import Bot, Dispatcher
 from aiogram.types import Message
+from aiogram.filters import Command
 from dotenv import load_dotenv
-from panel import run
+import uvicorn
 
+# ===== ENV =====
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BASE_URL = os.getenv("BASE_URL")
-ADMIN = int(os.getenv("ADMIN_ID", "0"))
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
-dp.include_router(router)
-
-DATA = "data/"
-USER_MSG = {}
-
+# ===== LOG =====
 logging.basicConfig(level=logging.INFO)
 
-# ===== UTILS =====
-def load(f, d={}):
-    try: return json.load(open(DATA+f))
-    except: return d
+# ===== DB =====
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
-def save(f, d):
-    json.dump(d, open(DATA+f,"w"), indent=2)
-
-def log(msg):
+# ===== INIT DB (AUTO CREATE TABLE) =====
+def init_db():
     try:
-        requests.post(f"{BASE_URL}/log", json={"msg":msg})
-    except:
-        pass
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS keywords (
+            id SERIAL PRIMARY KEY,
+            trigger TEXT UNIQUE,
+            response TEXT
+        );
+        """)
+        conn.commit()
+        conn.close()
+        print("✅ DB READY")
+    except Exception as e:
+        print("DB INIT ERROR:", e)
 
-# ===== SPAM =====
-def spam_check(uid):
-    now = time.time()
-    arr = USER_MSG.get(uid, [])
-    arr = [t for t in arr if now - t < 5]
-    arr.append(now)
-    USER_MSG[uid] = arr
-    return len(arr) > 5
+# ===== CACHE =====
+KEYWORDS_CACHE = {}
 
-# ===== WARN =====
-def warn(uid):
-    w = load("warns.json", {})
-    uid=str(uid)
-    w[uid]=w.get(uid,0)+1
-    save("warns.json", w)
-    return w[uid]
-
-# ===== ROLE =====
-def is_admin(uid):
-    roles = load("roles.json", {})
-    return uid in roles.get("owner", []) or uid in roles.get("admin", [])
-
-# ===== KEYWORD =====
 def load_keywords():
-    return load("keywords.json", {})
+    global KEYWORDS_CACHE
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT trigger, response FROM keywords")
+        data = cur.fetchall()
+        conn.close()
 
-# ===== AUTO ADD GROUP =====
-@router.my_chat_member()
-async def added(e):
-    g = load("groups.json", {})
-    if str(e.chat.id) not in g:
-        g[str(e.chat.id)] = {
-            "lock": False,
-            "auto_post": True,
-            "post_delay": 120,
-            "antispam": True
-        }
-        save("groups.json", g)
+        KEYWORDS_CACHE = {k: v for k, v in data}
+        print(f"🔥 Loaded {len(KEYWORDS_CACHE)} keywords")
 
-# ===== HANDLER =====
-@router.message()
-async def handler(m: Message):
+    except Exception as e:
+        print("DB ERROR:", e)
 
-    if not m.text:
-        return
+def add_keyword_db(trigger, response):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO keywords (trigger, response)
+        VALUES (%s, %s)
+        ON CONFLICT (trigger)
+        DO UPDATE SET response = EXCLUDED.response
+    """, (trigger, response))
+    conn.commit()
+    conn.close()
 
-    text = m.text.lower()
-    uid = m.from_user.id
-    gid = str(m.chat.id)
+    load_keywords()
 
-    groups = load("groups.json", {})
-    if gid not in groups:
-        return
+# ===== BOT =====
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
-    cfg = groups[gid]
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.answer("🤖 Bot Trung Quốc PRO đã online!")
 
-    # ===== SPAM =====
-    if spam_check(uid):
-        await m.delete()
-        return
+@dp.message()
+async def auto_reply(message: Message):
+    try:
+        if not message.text:
+            return
 
-    # ===== AI SIMPLE FILTER =====
-    bad = ["airdrop", "free", "赚", "赚钱"]
-    if any(w in text for w in bad):
-        await m.delete()
-        await bot.ban_chat_member(m.chat.id, uid)
-        return
+        text = message.text.lower()
 
-    # ===== KEYWORD =====
-    keywords = load_keywords()
-
-    if gid in keywords:
-        for item in keywords[gid]:
-            if item["key"] in text:
-
-                if item.get("text"):
-                    await m.answer(item["text"])
-
-                for f in item.get("files", []):
-                    path = f"static/{f}"
-                    try:
-                        if f.endswith(".jpg") or f.endswith(".png"):
-                            await bot.send_photo(m.chat.id, photo=open(path,"rb"))
-                        elif f.endswith(".mp4"):
-                            await bot.send_video(m.chat.id, video=open(path,"rb"))
-                    except:
-                        pass
-
-                if item.get("buttons"):
-                    kb = types.InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [types.InlineKeyboardButton(text=b["text"], url=b["url"])]
-                            for b in item["buttons"]
-                        ]
-                    )
-                    await m.answer("🔗 Link:", reply_markup=kb)
-
+        for key, response in KEYWORDS_CACHE.items():
+            if key in text:
+                await message.reply(response)
                 return
 
-    # ===== LOCK =====
-    if cfg.get("lock"):
-        await m.delete()
-        return
-
-    # ===== ADMIN =====
-    if is_admin(uid):
-
-        if text == "/stats":
-            s = load("users_stats.json", {})
-            await m.answer(str(s))
-
-        if text.startswith("/addkey"):
+        if "http" in text or "t.me" in text:
             try:
-                _, key, msg = text.split(" ",2)
-                kw = load("keywords.json", {})
-                kw.setdefault(gid, []).append({
-                    "key": key,
-                    "text": msg
-                })
-                save("keywords.json", kw)
-                await m.answer("✅ added")
+                await message.delete()
             except:
-                await m.answer("❌ error")
+                pass
 
-# ===== AUTO POST =====
-async def auto_post():
-    while True:
-        g = load("groups.json", {})
-        t = load("post_template.json", {})
+    except Exception as e:
+        print("BOT ERROR:", e)
 
-        for gid,cfg in g.items():
-            if cfg.get("auto_post") and gid in t:
-                try:
-                    await bot.send_message(int(gid), t[gid]["text"])
-                except:
-                    pass
+# ===== FASTAPI =====
+app = FastAPI()
 
-        await asyncio.sleep(60)
+@app.on_event("startup")
+async def startup():
+    print("🚀 Server starting...")
+    init_db()          # 🔥 auto tạo bảng
+    load_keywords()    # 🔥 load cache
 
-# ===== HEALTH =====
-async def health(request):
-    return web.Response(text="OK")
+@app.get("/")
+def home():
+    return {"status": "ok"}
 
-# ===== WEBHOOK =====
-async def handle(request):
-    data = await request.json()
-    update = types.Update(**data)
-    await dp.feed_update(bot, update)
-    return web.Response(text="OK")
+@app.get("/add")
+def add(trigger: str, response: str):
+    add_keyword_db(trigger, response)
+    return {"msg": "added"}
 
 # ===== MAIN =====
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
 
-    asyncio.create_task(auto_post())
-    threading.Thread(target=run, daemon=True).start()
+    bot_task = asyncio.create_task(dp.start_polling(bot))
 
-    print("🚀 SYSTEM RUNNING")
+    port = int(os.environ.get("PORT", 8080))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port)
+    server = uvicorn.Server(config)
 
-    app = web.Application()
+    api_task = asyncio.create_task(server.serve())
 
-    app.router.add_post(f"/{BOT_TOKEN}", handle)
-    app.router.add_get("/", health)
-
-    async def on_startup(app):
-        await bot.set_webhook(f"{BASE_URL}/{BOT_TOKEN}")
-        logging.info("✅ Webhook set")
-
-    async def on_shutdown(app):
-        await bot.session.close()
-
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    port = int(os.getenv("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-
-    await site.start()
-
-    while True:
-        await asyncio.sleep(3600)
+    await asyncio.gather(bot_task, api_task)
 
 if __name__ == "__main__":
     asyncio.run(main())
