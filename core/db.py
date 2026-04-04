@@ -1,7 +1,12 @@
-import psycopg2
+import asyncpg
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+pool = None
 
-def get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+async def connect_db():
+    global pool
+    pool = await asyncpg.create_pool(
+        os.getenv("DATABASE_URL"),
+        min_size=1,
+        max_size=10
+    )
