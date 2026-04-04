@@ -15,17 +15,15 @@ DB_URL = os.getenv("DATABASE_URL")
 print("DB_URL =", DB_URL)
 
 # ===== DB CONNECT RETRY =====
-def connect_db():
-    for i in range(20):  # tăng lên
+    def connect_db():
+    for i in range(30):  # tăng lên 30 lần
         try:
             print("🔌 Connecting DB...")
             return psycopg2.connect(DB_URL, sslmode="require")
         except Exception as e:
             print("❌ DB fail, retry...", e)
-            time.sleep(3)
+            time.sleep(2)
     raise Exception("DB connect failed")
-conn = connect_db()
-cur = conn.cursor()
 # ===== BOT =====
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
