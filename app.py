@@ -80,13 +80,19 @@ def add(trigger: str, response: str):
     return {"msg": "added"}
 
 # ===== RUN =====
-async def run_bot():
-    await dp.start_polling(bot)
+import asyncio
+import uvicorn
 
-def run_api():
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+async def main():
+    # chạy bot song song với API
+    bot_task = asyncio.create_task(dp.start_polling(bot))
+    
+    config = uvicorn.Config(app, host="0.0.0.0", port=8080)
+    server = uvicorn.Server(config)
+
+    api_task = asyncio.create_task(server.serve())
+
+    await asyncio.gather(bot_task, api_task)
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_bot())
-    run_api()
+    asyncio.run(main())
