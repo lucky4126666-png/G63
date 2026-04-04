@@ -3,72 +3,66 @@ import asyncio
 import logging
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
-from dotenv import load_dotenv
 
-# ===== LOAD ENV =====
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# ===== CONFIG =====
+BOT_TOKEN = os.environ["8595583672:AAGqM7EnDeTRiKEHZxQpZGIETYvHhX-NKxc"]  # bắt buộc phải có
 
 # ===== LOG =====
 logging.basicConfig(level=logging.INFO)
 
-# ===== INIT BOT =====
+# ===== INIT =====
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== MEMORY DB (simple) =====
+# ===== DATA =====
 users = {}
 
-# ===== BOT COMMAND =====
+# ===== BOT HANDLER =====
 @dp.message()
-async def handle_message(message: Message):
+async def handle(message: types.Message):
     text = message.text.lower()
 
     if text == "ping":
         await message.answer("pong 🏓")
 
     elif text.startswith("set "):
-        key = text.replace("set ", "")
-        users[message.from_user.id] = key
-        await message.answer(f"✅ Đã lưu: {key}")
+        value = text[4:]
+        users[message.from_user.id] = value
+        await message.answer(f"✅ saved: {value}")
 
     elif text == "get":
-        val = users.get(message.from_user.id, "chưa có dữ liệu")
-        await message.answer(f"📦 Data: {val}")
+        value = users.get(message.from_user.id, "none")
+        await message.answer(f"📦 {value}")
 
     else:
-        await message.answer("🤖 Bot VIP đang chạy!")
+        await message.answer("🤖 bot running...")
 
-# ===== WEB ADMIN =====
+# ===== WEB =====
 async def index(request):
-    html = """
-    <html>
-    <head><title>BOT VIP</title></head>
-    <body style="font-family:sans-serif">
-        <h1>🚀 BOT VIP DASHBOARD</h1>
-        <p>Status: ONLINE</p>
-        <p>Total Users: %d</p>
-    </body>
-    </html>
-    """ % len(users)
-    return web.Response(text=html, content_type="text/html")
+    return web.Response(text=f"""
+    <h1>🚀 BOT VIP</h1>
+    <p>Status: ONLINE</p>
+    <p>Users: {len(users)}</p>
+    """, content_type="text/html")
 
 app = web.Application()
 app.router.add_get("/", index)
 
-# ===== MAIN =====
-async def start_bot():
-    print("🔥 Bot started...")
-    await dp.start_polling(bot)
+# ===== START BOT =====
+async def start_bot(app):
+    print("🔥 Bot started")
+    asyncio.create_task(dp.start_polling(bot))
+
+# ===== CLEANUP =====
+async def stop_bot(app):
+    print("🛑 Bot stopping")
+    await bot.session.close()
+
+# ===== HOOK =====
+app.on_startup.append(start_bot)
+app.on_cleanup.append(stop_bot)
 
 # ===== RUN =====
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-
-    # chạy bot song song web
-    loop.create_task(start_bot())
-
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.environ.get("PORT", 8080))
     web.run_app(app, host="0.0.0.0", port=port)
