@@ -68,7 +68,7 @@ def add_keyword_db(trigger, response):
     load_keywords()
 
 # ===== ADMIN =====
-ADMIN_IDS = [123456789]
+ADMIN_IDS = [8655755346]
 
 def is_admin(uid):
     return uid in ADMIN_IDS
@@ -97,7 +97,7 @@ def menu():
 async def start(msg: Message):
     await msg.answer("🤖 Bot đang hoạt động")
 
-# ===== ADMIN PANEL =====
+# ===== ADMIN =====
 @dp.message(Command("admin"))
 async def admin(msg: Message):
     if not is_admin(msg.from_user.id):
@@ -105,7 +105,7 @@ async def admin(msg: Message):
 
     await msg.answer("⚙️ ADMIN PANEL", reply_markup=menu())
 
-# ===== MENU HANDLE =====
+# ===== MENU =====
 @dp.callback_query()
 async def menu_handler(cb: CallbackQuery, state: FSMContext):
 
@@ -160,12 +160,17 @@ async def auto(msg: Message):
     if not msg.text:
         return
 
+    # ⚠️ tránh ăn command
+    if msg.text.startswith("/"):
+        return
+
     text = msg.text.lower()
 
     for k,v in KEYWORDS_CACHE.items():
         if k in text:
             return await msg.reply(v)
 
+    # anti link
     if "http" in text or "t.me" in text:
         try:
             await msg.delete()
@@ -186,6 +191,7 @@ def home():
 
 # ===== MAIN =====
 async def main():
+    # 🔥 FIX CONFLICT
     await bot.delete_webhook(drop_pending_updates=True)
 
     bot_task = asyncio.create_task(dp.start_polling(bot))
