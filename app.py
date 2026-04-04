@@ -1,5 +1,4 @@
 import os
-import asyncio
 import psycopg2
 from aiohttp import web
 from aiogram import Bot, Dispatcher, Router
@@ -11,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://your-app.up.railway.app
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 DB_URL = os.getenv("DATABASE_URL")
 
 if DB_URL.startswith("postgres://"):
@@ -25,13 +24,9 @@ dp = Dispatcher()
 router = Router()
 
 # ===== DB CONNECT =====
-DB_URL = os.getenv("DATABASE_URL")
-
-if DB_URL.startswith("postgres://"):
-    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
-
 def connect_db():
     return psycopg2.connect(DB_URL, sslmode="require")
+
 # ===== SAVE USER =====
 def save_user(telegram_id, username):
     conn = connect_db()
@@ -61,9 +56,13 @@ dp.include_router(router)
 
 # ===== WEBHOOK HANDLER =====
 async def handle_webhook(request):
-    data = await request.json()
-    update = Update(**data)
-    await dp.feed_update(bot, update)
+    try:
+        data = await request.json()
+        update = Update(**data)
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        print("ERROR:", e)
+
     return web.Response()
 
 # ===== HEALTH CHECK =====
@@ -79,6 +78,11 @@ async def on_startup(app):
 
     print("✅ Webhook set:", webhook)
 
+# ===== SHUTDOWN (FIX LỖI CRASH) =====
+async def on_shutdown(app):
+    print("🛑 Shutting down...")
+    await bot.session.close()
+
 # ===== MAIN APP =====
 def main():
     app = web.Application()
@@ -87,6 +91,7 @@ def main():
     app.router.add_post("/webhook", handle_webhook)
 
     app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)  # 👈 QUAN TRỌNG
 
     web.run_app(app, host="0.0.0.0", port=PORT)
 
