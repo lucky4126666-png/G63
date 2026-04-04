@@ -1,14 +1,10 @@
-import os, asyncio, requests
+import os, asyncio, requests, time
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from dotenv import load_dotenv
 import psycopg2
 import pathlib
-import os
 
-DB_URL = os.getenv("DATABASE_URL")
-
-print("DB_URL =", DB_URL)
 # ===== ENV =====
 load_dotenv()
 
@@ -16,6 +12,21 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
 DB_URL = os.getenv("DATABASE_URL")
 
+print("DB_URL =", DB_URL)
+
+# ===== DB CONNECT RETRY =====
+def connect_db():
+    for i in range(10):
+        try:
+            print("🔌 Connecting DB...")
+            return psycopg2.connect(DB_URL)
+        except Exception as e:
+            print("❌ DB fail, retry...", e)
+            time.sleep(2)
+    raise Exception("DB connect failed")
+
+conn = connect_db()
+cur = conn.cursor()
 # ===== BOT =====
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
