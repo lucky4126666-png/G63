@@ -12,6 +12,7 @@ from aiogram.filters import Command
 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
 
 import uvicorn
 
@@ -20,7 +21,6 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ===== LOG =====
 logging.basicConfig(level=logging.INFO)
 
 # ===== DB =====
@@ -73,9 +73,9 @@ ADMIN_IDS = [8655755346]
 def is_admin(uid):
     return uid in ADMIN_IDS
 
-# ===== BOT =====
+# ===== BOT + STORAGE =====
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())  # 🔥 FIX FSM
 
 # ===== FSM =====
 class AdminState(StatesGroup):
@@ -97,16 +97,18 @@ def menu():
 async def start(msg: Message):
     await msg.answer("🤖 Bot đang hoạt động")
 
-# ===== ADMIN =====
+# ===== ADMIN MENU =====
 @dp.message(Command("admin"))
 async def admin(msg: Message):
+    print("ADMIN HIT:", msg.from_user.id)
+
     if not is_admin(msg.from_user.id):
-        return await msg.answer("❌ Không có quyền")
+        return await msg.answer(f"❌ Không có quyền\nID: {msg.from_user.id}")
 
     await msg.answer("⚙️ ADMIN PANEL", reply_markup=menu())
 
-# ===== MENU =====
-@dp.callback_query()
+# ===== CALLBACK =====
+@dp.callback_query(lambda c: c.data in ["add", "list", "delete", "stats"])
 async def menu_handler(cb: CallbackQuery, state: FSMContext):
 
     if not is_admin(cb.from_user.id):
@@ -117,7 +119,7 @@ async def menu_handler(cb: CallbackQuery, state: FSMContext):
         await state.set_state(AdminState.key)
 
     elif cb.data == "list":
-        text = "\n".join([f"{k} → {v}" for k,v in KEYWORDS_CACHE.items()])
+        text = "\n".join([f"{k} → {v}" for k, v in KEYWORDS_CACHE.items()])
         await cb.message.answer(text or "Trống")
 
     elif cb.data == "delete":
@@ -160,22 +162,15 @@ async def auto(msg: Message):
     if not msg.text:
         return
 
-    # ⚠️ tránh ăn command
+    # 🔥 FIX: không chặn command nữa
     if msg.text.startswith("/"):
         return
 
     text = msg.text.lower()
 
-    for k,v in KEYWORDS_CACHE.items():
+    for k, v in KEYWORDS_CACHE.items():
         if k in text:
             return await msg.reply(v)
-
-    # anti link
-    if "http" in text or "t.me" in text:
-        try:
-            await msg.delete()
-        except:
-            pass
 
 # ===== FASTAPI =====
 app = FastAPI()
@@ -191,8 +186,7 @@ def home():
 
 # ===== MAIN =====
 async def main():
-    # 🔥 FIX CONFLICT
-    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=True)  # 🔥 FIX conflict
 
     bot_task = asyncio.create_task(dp.start_polling(bot))
 
