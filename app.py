@@ -1,56 +1,31 @@
 import os
 import asyncio
-import time
-import pathlib
-from aiohttp import web
-from aiogram import Bot, Dispatcher, types
-from dotenv import load_dotenv
 import psycopg2
+from aiohttp import web
+from aiogram import Bot, Dispatcher, Router
+from aiogram.types import Message, Update
+from aiogram.filters import Command
+from dotenv import load_dotenv
 
 # ===== LOAD ENV =====
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BASE_URL = os.getenv("BASE_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://your-app.up.railway.app
 DB_URL = os.getenv("DATABASE_URL")
 
-print("DB_URL =", DB_URL)
+PORT = int(os.getenv("PORT", 8080))
 
-# ===== BOT =====
-bot = Bot(BOT_TOKEN)
+# ===== INIT BOT =====
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+router = Router()
 
-# ===== DB CONNECT (retry) =====
+# ===== DB CONNECT =====
 def connect_db():
-    for i in range(10):
-        try:
-            print("🔌 Connecting DB...")
-            conn = psycopg2.connect(DB_URL)
-            print("✅ DB Connected")
-            return conn
-        except Exception as e:
-            print("❌ DB fail, retry...", e)
-            time.sleep(2)
-    raise Exception("DB connect failed")
+    return psycopg2.connect(DB_URL)
 
-conn = connect_db()
-cur = conn.cursor()
-
-# ===== QUERY =====
-def query(q, v=None):
-    cur.execute(q, v or ())
-    conn.commit()
-    if cur.description:
-        return cur.fetchall()
-    return None
-
-# ===== AI FILTER =====
-def ai_detect(text):
-    bad = ["airdrop", "free", "赚"]
-    return any(w in text for w in bad)
-
-# ===== BOT HANDLER =====
-@dp.message()
+# ===== SAVE USER =====
 def save_user(telegram_id, username):
     conn = connect_db()
     cur = conn.cursor()
@@ -65,81 +40,49 @@ def save_user(telegram_id, username):
     cur.close()
     conn.close()
 
+# ===== HANDLER =====
+@router.message(Command("start"))
+async def start_handler(msg: Message):
+    print("USER HIT /start")
 
-from aiogram import Router
-from aiogram.types import Message
-from aiogram.filters import Command
+    save_user(msg.from_user.id, msg.from_user.username)
 
+    await msg.answer("Bot đang hoạt động 🚀")
+
+# ===== REGISTER ROUTER =====
 dp.include_router(router)
 
-@router.message(Command("start"))
-async def start(msg: Message):
-    save_user(msg.from_user.id, msg.from_user.username)
-    await msg.answer("Bot đang hoạt động 🚀")
-    
-    # save user
-    query("INSERT INTO users(id) VALUES(%s) ON CONFLICT DO NOTHING", (uid,))
-
-    # detect scam
-    if ai_detect(text):
-        try:
-            await m.delete()
-            await bot.ban_chat_member(m.chat.id, uid)
-        except:
-            pass
-
-# ===== WEBHOOK =====
-async def handle(request):
+# ===== WEBHOOK HANDLER =====
+async def handle_webhook(request):
     data = await request.json()
-    update = types.Update(**data)
+    update = Update(**data)
     await dp.feed_update(bot, update)
-    return web.Response(text="OK")
+    return web.Response()
 
-# ===== API =====
-async def users(request):
-    return web.json_response(query("SELECT * FROM users") or [])
+# ===== HEALTH CHECK =====
+async def index(request):
+    return web.Response(text="Bot is running 🚀")
 
-async def groups(request):
-    return web.json_response(query("SELECT * FROM groups") or [])
+# ===== STARTUP =====
+async def on_startup(app):
+    print("🔥 STARTING SERVER...")
 
-# ===== MAIN =====
-async def main():
-    # set webhook
-    await bot.set_webhook(f"{BASE_URL}/{BOT_TOKEN}")
-    print("✅ Webhook set")
+    webhook = f"{WEBHOOK_URL}/webhook"
+    await bot.set_webhook(webhook)
 
+    print("✅ Webhook set:", webhook)
+
+# ===== MAIN APP =====
+def main():
     app = web.Application()
 
-    # ===== STATIC =====
-    STATIC = pathlib.Path("frontend/build")
+    app.router.add_get("/", index)
+    app.router.add_post("/webhook", handle_webhook)
 
-    if STATIC.exists():
-        async def index(request):
-            return web.FileResponse(STATIC / "index.html")
+    app.on_startup.append(on_startup)
 
-        app.router.add_get("/", index)
-        app.router.add_static("/", STATIC)
+    web.run_app(app, host="0.0.0.0", port=PORT)
 
-    # ===== ROUTES =====
-    app.router.add_post(f"/{BOT_TOKEN}", handle)
-    app.router.add_get("/api/users", users)
-    app.router.add_get("/api/groups", groups)
-
-    # ===== RUN SERVER =====
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    port = int(os.getenv("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-
-    await site.start()
-
-    print("🚀 SERVER RUNNING on port", port)
-
-    while True:
-        await asyncio.sleep(3600)
-
-# ===== START =====
+# ===== RUN =====
 if __name__ == "__main__":
-    print("🔥 STARTING SERVER...")
-    asyncio.run(main())
+    main()
