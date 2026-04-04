@@ -99,9 +99,8 @@ async def startup():
 def home():
     return {"status": "ok"}
 
-@app.post("/add")
+@app.get("/add")
 def add(trigger: str, response: str):
-    add_keyword_db(trigger, response)
     return {"msg": "added"}
 
 # ===== MAIN (QUAN TRỌNG NHẤT) =====
