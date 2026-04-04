@@ -1,0 +1,19 @@
+from fastapi import APIRouter
+from core.db import pool
+from core.bot_manager import start_bot
+
+router = APIRouter()
+
+@router.post("/bot")
+async def add_bot(data: dict):
+    token = data["token"]
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO bots(token,is_active) VALUES($1,TRUE)",
+            token
+        )
+
+    await start_bot(token)
+
+    return {"status": "ok"}
