@@ -32,7 +32,9 @@ def init_db():
     CREATE TABLE IF NOT EXISTS keywords (
         id SERIAL PRIMARY KEY,
         trigger TEXT UNIQUE,
-        response TEXT
+        text TEXT,
+        file_id TEXT,
+        file_type TEXT
     );
     """)
     conn.commit()
@@ -45,25 +47,34 @@ def load_keywords():
     global KEYWORDS_CACHE
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT trigger, response FROM keywords")
+    cur.execute("SELECT trigger, text, file_id, file_type FROM keywords")
     data = cur.fetchall()
     conn.close()
-    KEYWORDS_CACHE = {k: v for k, v in data}
-    print("🔥 Loaded", len(KEYWORDS_CACHE), "keywords")
 
-def add_keyword(trigger, response):
+    KEYWORDS_CACHE = {
+        k: {
+            "text": t,
+            "file_id": f,
+            "type": tp
+        }
+        for k, t, f, tp in data
+    }
+
+# ===== SAVE =====
+def save_keyword(trigger, text=None, file_id=None, file_type=None):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-    INSERT INTO keywords (trigger, response)
-    VALUES (%s,%s)
+    INSERT INTO keywords (trigger, text, file_id, file_type)
+    VALUES (%s,%s,%s,%s)
     ON CONFLICT (trigger)
-    DO UPDATE SET response = EXCLUDED.response
-    """, (trigger, response))
+    DO UPDATE SET text=%s, file_id=%s, file_type=%s
+    """, (trigger, text, file_id, file_type, text, file_id, file_type))
     conn.commit()
     conn.close()
     load_keywords()
 
+# ===== DELETE =====
 def delete_keyword(trigger):
     conn = get_conn()
     cur = conn.cursor()
@@ -84,89 +95,106 @@ dp = Dispatcher(storage=MemoryStorage())
 
 # ===== FSM =====
 class AdminState(StatesGroup):
-    key = State()
-    value = State()
-    delete = State()
+    waiting_key = State()
+    waiting_content = State()
 
 # ===== MENU =====
 def menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Thêm keyword", callback_data="add")],
-        [InlineKeyboardButton(text="📋 Danh sách", callback_data="list")],
-        [InlineKeyboardButton(text="🗑️ Xoá keyword", callback_data="delete")],
-        [InlineKeyboardButton(text="📊 Stats", callback_data="stats")]
+        [InlineKeyboardButton(text="➕ Thêm", callback_data="add")],
+        [InlineKeyboardButton(text="📋 List", callback_data="list")]
     ])
 
-# ===== FORCE ADMIN COMMAND (FIX 100%) =====
+# ===== ADMIN =====
 @dp.message()
 async def router(msg: Message, state: FSMContext):
-    if not msg.text:
+    if not msg.text and not msg.photo and not msg.video and not msg.animation:
         return
 
-    text = msg.text.strip()
-
     # ===== ADMIN MENU =====
-    if text == "/admin":
+    if msg.text == "/admin":
         if not is_admin(msg.from_user.id):
-            return await msg.answer(f"❌ Không có quyền\nID: {msg.from_user.id}")
+            return
         return await msg.answer("⚙️ ADMIN PANEL", reply_markup=menu())
 
-    # ===== FSM FLOW =====
+    # ===== FSM =====
     current = await state.get_state()
 
-    if current == AdminState.key:
-        await state.update_data(key=text)
-        await msg.answer("👉 Nhập nội dung:")
-        return await state.set_state(AdminState.value)
+    if current == AdminState.waiting_key:
+        await state.update_data(key=msg.text.lower())
+        await msg.answer("👉 Gửi nội dung (text / ảnh / video / gif):")
+        return await state.set_state(AdminState.waiting_content)
 
-    if current == AdminState.value:
+    if current == AdminState.waiting_content:
         data = await state.get_data()
-        add_keyword(data["key"].lower(), text)
-        await msg.answer("✅ Đã thêm")
-        return await state.clear()
+        key = data["key"]
 
-    if current == AdminState.delete:
-        delete_keyword(text)
-        await msg.answer("🗑️ Đã xoá")
+        text = msg.caption if msg.caption else msg.text
+
+        file_id = None
+        file_type = None
+
+        if msg.photo:
+            file_id = msg.photo[-1].file_id
+            file_type = "photo"
+
+        elif msg.video:
+            file_id = msg.video.file_id
+            file_type = "video"
+
+        elif msg.animation:
+            file_id = msg.animation.file_id
+            file_type = "gif"
+
+        save_keyword(key, text, file_id, file_type)
+
+        await msg.answer(f"✅ Đã lưu: {key}")
         return await state.clear()
 
     # ===== AUTO REPLY =====
-    if text.startswith("/"):
-        return
+    if msg.text and not msg.text.startswith("/"):
+        text = msg.text.lower()
 
-    text_lower = text.lower()
+        for k, data in KEYWORDS_CACHE.items():
+            if k in text:
 
-    for k, v in KEYWORDS_CACHE.items():
-        if k in text_lower:
-            return await msg.reply(v)
+                if data["type"] == "photo":
+                    return await msg.answer_photo(
+                        data["file_id"],
+                        caption=data["text"],
+                        parse_mode="HTML"
+                    )
 
-    # anti link
-    if "http" in text_lower or "t.me" in text_lower:
-        try:
-            await msg.delete()
-        except:
-            pass
+                if data["type"] == "video":
+                    return await msg.answer_video(
+                        data["file_id"],
+                        caption=data["text"],
+                        parse_mode="HTML"
+                    )
+
+                if data["type"] == "gif":
+                    return await msg.answer_animation(
+                        data["file_id"],
+                        caption=data["text"],
+                        parse_mode="HTML"
+                    )
+
+                return await msg.answer(data["text"], parse_mode="HTML")
 
 # ===== CALLBACK =====
 @dp.callback_query()
 async def callback(cb: CallbackQuery, state: FSMContext):
+
     if not is_admin(cb.from_user.id):
         return
 
     if cb.data == "add":
-        await cb.message.answer("👉 Nhập KEY:")
-        await state.set_state(AdminState.key)
+        await cb.message.answer("👉 Nhập keyword:")
+        await state.set_state(AdminState.waiting_key)
 
     elif cb.data == "list":
-        text = "\n".join([f"{k} → {v}" for k, v in KEYWORDS_CACHE.items()])
-        await cb.message.answer(text or "Trống")
-
-    elif cb.data == "delete":
-        await cb.message.answer("👉 Nhập key cần xoá:")
-        await state.set_state(AdminState.delete)
-
-    elif cb.data == "stats":
-        await cb.message.answer(f"📊 Tổng keyword: {len(KEYWORDS_CACHE)}")
+        for k in KEYWORDS_CACHE:
+            await cb.message.answer(k)
 
 # ===== FASTAPI =====
 app = FastAPI()
