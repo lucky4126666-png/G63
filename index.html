@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bot Admin</title>
+</head>
+<body>
+  <h2>Thêm keyword</h2>
+
+  <input id="key" placeholder="trigger">
+  <input id="value" placeholder="response">
+  <button onclick="add()">Add</button>
+
+  <script>
+    async function add() {
+      const key = document.getElementById("key").value
+      const value = document.getElementById("value").value
+
+      await fetch("/add?trigger=" + key + "&response=" + value, {
+        method: "POST"
+      })
+
+      alert("Added!")
+    }
+  </script>
+</body>
+</html>
