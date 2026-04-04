@@ -6,7 +6,9 @@ import psycopg2
 import pathlib
 import os
 
-print("DB_URL =", os.getenv("DATABASE_URL"))
+DB_URL = os.getenv("DATABASE_URL")
+
+print("DB_URL =", DB_URL)
 # ===== ENV =====
 load_dotenv()
 
