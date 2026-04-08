@@ -19,9 +19,6 @@ dp = Dispatcher(storage=MemoryStorage())
 # ===== CACHE =====
 KEYWORDS = {}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=PORT)
 def load_keywords():
     global KEYWORDS
     conn = get_conn()
@@ -156,4 +153,5 @@ def home():
 
 # ===== RUN =====
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=PORT)
