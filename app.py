@@ -1,5 +1,7 @@
 import os
 import re
+import time
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from aiogram import Bot, Dispatcher, types
@@ -20,7 +22,15 @@ from db import (
     log_action,
     get_all_admins,
     save_group,
-    get_groups
+    get_groups,
+    add_keyword,
+    get_keywords,
+    remove_keyword,
+    add_scheduled_post,
+    get_scheduled_posts,
+    get_due_scheduled_posts,
+    update_scheduled_post_next_run,
+    remove_scheduled_post
 )
 from ai_service import ask_ai
 
@@ -46,7 +56,6 @@ app = FastAPI()
 # ===== INIT DB =====
 init_db()
 
-# Tự động thêm super admin nếu có cấu hình
 if SUPER_ADMIN_ID:
     add_admin(SUPER_ADMIN_ID, "super")
 
@@ -60,16 +69,127 @@ async def is_allowed(chat_id, user_id):
     return any(a.user.id == user_id for a in admins)
 
 def extract_target_user_id(message: types.Message):
-    # Cách 1: reply vào tin nhắn của user
     if message.reply_to_message and message.reply_to_message.from_user:
         return message.reply_to_message.from_user.id
 
-    # Cách 2: /addadmin 123456789
     parts = (message.text or "").split()
     if len(parts) >= 2 and parts[1].isdigit():
         return int(parts[1])
 
     return None
+
+def parse_block_fields(body: str):
+    """
+    Parse dạng:
+    key: hello
+    reply: Xin chào
+    image: https://...
+    buttons: Nút 1|https://a.com;Nút 2|https://b.com
+    """
+    data = {}
+    for line in (body or "").splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        field, value = line.split(":", 1)
+        data[field.strip().lower()] = value.strip()
+    return data
+
+def build_buttons(buttons_text):
+    """
+    buttons: Nút 1|https://a.com;Nút 2|https://b.com;Nút 3|https://c.com;Nút 4|https://d.com
+    Tự chia 2 nút / hàng => 4 nút sẽ ra 2x2
+    """
+    if not buttons_text:
+        return None
+
+    items = re.split(r"[;\n]+", buttons_text.strip())
+    buttons = []
+
+    for item in items:
+        item = item.strip()
+        if not item or "|" not in item:
+            continue
+
+        label, url = item.split("|", 1)
+        label = label.strip()
+        url = url.strip()
+
+        if label and url:
+            buttons.append(InlineKeyboardButton(text=label, url=url))
+
+    if not buttons:
+        return None
+
+    rows = []
+    for i in range(0, len(buttons), 2):
+        rows.append(buttons[i:i+2])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def find_keyword_match(text):
+    if not text:
+        return None
+
+    keys = get_keywords()
+    if not keys:
+        return None
+
+    keys = sorted(keys, key=lambda x: len(x[0]), reverse=True)
+    lower_text = text.lower()
+
+    for key, reply, image, buttons in keys:
+        if key.lower() in lower_text:
+            return {
+                "key": key,
+                "reply": reply,
+                "image": image,
+                "buttons": buttons
+            }
+
+    return None
+
+async def send_post_to_chat(chat_id, text, image=None, buttons=None):
+    kb = build_buttons(buttons)
+
+    if image:
+        if len(text) <= 1024:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=image,
+                caption=text,
+                reply_markup=kb
+            )
+        else:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=image,
+                reply_markup=kb
+            )
+            await bot.send_message(chat_id, text, reply_markup=kb)
+    else:
+        await bot.send_message(chat_id, text, reply_markup=kb)
+
+async def auto_post_loop():
+    while True:
+        try:
+            now_ts = int(time.time())
+            due_posts = get_due_scheduled_posts(now_ts)
+
+            for post in due_posts:
+                post_id, chat_id, interval_min, text, image, buttons, enabled, next_run = post
+
+                try:
+                    await send_post_to_chat(chat_id, text, image, buttons)
+                    new_next_run = now_ts + int(interval_min) * 60
+                    update_scheduled_post_next_run(post_id, new_next_run)
+                except Exception as e:
+                    print(f"auto_post post_id={post_id} error:", e)
+
+        except Exception as e:
+            print("auto_post_loop error:", e)
+
+        await asyncio.sleep(30)
 
 # ================= ADMIN COMMANDS =================
 @dp.message(lambda m: m.text and m.text.startswith("/addadmin"))
@@ -121,6 +241,110 @@ async def list_admins_cmd(m: types.Message):
 
     await m.reply(text)
 
+# ================= KEY COMMANDS =================
+@dp.message(lambda m: m.text and m.text.startswith("/addkey"))
+async def add_key_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    body = m.text[len("/addkey"):].strip()
+
+    key = reply = image = buttons = None
+
+    if "\n" in body or "key:" in body.lower():
+        data = parse_block_fields(body)
+        key = data.get("key") or data.get("keyword")
+        reply = data.get("reply")
+        image = data.get("image")
+        buttons = data.get("buttons")
+    else:
+        parts = body.split("|", 3)
+        if len(parts) >= 2:
+            key = parts[0].strip()
+            reply = parts[1].strip()
+            image = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
+            buttons = parts[3].strip() if len(parts) > 3 and parts[3].strip() else None
+
+    if not key or not reply:
+        return await m.reply(
+            "❌ Thiếu key hoặc reply\n\n"
+            "Cách dùng:\n"
+            "/addkey hello|Xin chào|https://img.com/a.jpg|Nút 1|https://a.com;Nút 2|https://b.com;Nút 3|https://c.com;Nút 4|https://d.com\n\n"
+            "Hoặc:\n"
+            "/addkey\n"
+            "key: hello\n"
+            "reply: Xin chào\n"
+            "image: https://img.com/a.jpg\n"
+            "buttons: Nút 1|https://a.com;Nút 2|https://b.com;Nút 3|https://c.com;Nút 4|https://d.com"
+        )
+
+    add_keyword(key, reply, image, buttons)
+    log_action(m.from_user.id, "add_keyword", m.chat.id)
+    await m.reply(f"✅ Đã lưu key: {key}")
+
+@dp.message(lambda m: m.text and m.text.startswith("/delkey"))
+async def del_key_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    parts = m.text.split(maxsplit=1)
+    if len(parts) < 2:
+        return await m.reply("Cách dùng: /delkey hello")
+
+    key = parts[1].strip()
+    if not key:
+        return await m.reply("❌ Key trống")
+
+    remove_keyword(key)
+    log_action(m.from_user.id, "del_keyword", m.chat.id)
+    await m.reply(f"✅ Đã xoá key: {key}")
+
+@dp.message(lambda m: m.text == "/keys")
+async def list_keys_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    keys = get_keywords()
+    if not keys:
+        return await m.reply("Chưa có key nào")
+
+    text = "📋 Danh sách key:\n\n"
+    for key, reply, image, buttons in keys:
+        flag = []
+        if image:
+            flag.append("🖼")
+        if buttons:
+            flag.append("🔘")
+        flag_text = " ".join(flag) if flag else ""
+        text += f"- {key} {flag_text}\n"
+
+    await m.reply(text)
+
+@dp.message()
+async def keyword_auto_reply(m: types.Message):
+    if not m.text or m.text.startswith("/"):
+        return
+
+    match = find_keyword_match(m.text)
+    if not match:
+        return
+
+    kb = build_buttons(match["buttons"])
+
+    try:
+        if match["image"]:
+            await m.answer_photo(
+                photo=match["image"],
+                caption=match["reply"] if len(match["reply"]) <= 1024 else "",
+                reply_markup=kb
+            )
+            if len(match["reply"]) > 1024:
+                await m.answer(match["reply"], reply_markup=kb)
+        else:
+            await m.reply(match["reply"], reply_markup=kb)
+    except Exception as e:
+        print("keyword_auto_reply error:", e)
+
 # ================= START =================
 @dp.message(lambda m: m.text == "/start")
 async def start(m: types.Message):
@@ -138,35 +362,36 @@ async def start(m: types.Message):
 # ================= BOT JOIN =================
 @dp.my_chat_member()
 async def bot_join(e: types.ChatMemberUpdated):
-    if e.new_chat_member.status in ("member", "administrator"):
-        chat_id = e.chat.id
-        save_group(chat_id, e.chat.title)
+    try:
+        if e.old_chat_member.status == "left" and e.new_chat_member.status in ("member", "administrator"):
+            chat_id = e.chat.id
+            save_group(chat_id, e.chat.title)
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="公群导航", url="https://t.me/xbkf"),
-            InlineKeyboardButton(text="供需频道", url="https://t.me/xbkf")
-        ]])
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="公群导航", url="https://t.me/xbkf"),
+                InlineKeyboardButton(text="供需频道", url="https://t.me/xbkf")
+            ]])
 
-        try:
             await bot.send_message(
                 chat_id,
                 "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
                 reply_markup=kb
             )
-        except Exception as e:
-            print("bot_join send_message failed:", e)
 
-        admins = await bot.get_chat_administrators(chat_id)
-        ids = [a.user.id for a in admins]
+            admins = await bot.get_chat_administrators(chat_id)
+            admin_ids = [a.user.id for a in admins]
 
-        if not any(get_admin(i) for i in ids):
-            try:
+            has_admin = any(get_admin(uid) for uid in admin_ids)
+            has_super_admin = any(get_admin(uid) == "super" for uid in admin_ids)
+
+            if not has_admin and not has_super_admin:
                 await bot.send_message(
                     chat_id,
-                    "⚠️ 风险提示，本群没有检测到新币管理员。\n有交易风险，请联系 @xbkf"
+                    "⚠️ 风险提示，本群没有检测到新币管理员。\n"
+                    "有交易风险，请联系新币工作人员确认 @xbkf"
                 )
-            except Exception as e:
-                print("risk warning send failed:", e)
+    except Exception as e:
+        print("bot_join error:", e)
 
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
@@ -266,12 +491,13 @@ async def open_group(m: types.Message):
         print("open_group send failed:", e)
 
 # ================= RENAME GROUP (担保表单) =================
-@dp.message(lambda m: "担保表单" in (m.text or ""))
+@dp.message(lambda m: m.text and "担保表单" in m.text)
 async def rename_group(m: types.Message):
-    if not await is_allowed(m.chat.id, m.from_user.id):
+    role = get_admin(m.from_user.id)
+    if role not in ("admin", "super"):
         return await m.reply("❌ 无权限")
 
-    text = (m.text or "").replace("\n", " ")
+    text = m.text.replace("\n", " ")
 
     def find(pattern):
         r = re.search(pattern, text)
@@ -282,7 +508,6 @@ async def rename_group(m: types.Message):
     number = find(r"编号[:：]\s*(\d+)")
     rule = find(r"规则[:：]\s*([^\s]+)")
 
-    # fallback nếu format lệch
     if not name:
         name = find(r"名字[:：]\s*(.+)")
 
@@ -304,13 +529,91 @@ async def rename_group(m: types.Message):
         await m.reply("❌ 修改群名失败，请检查机器人权限")
         print("rename_group error:", e)
 
+# ================= AUTO POST =================
+@dp.message(lambda m: m.text and m.text.startswith("/addpost"))
+async def add_post_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    body = m.text[len("/addpost"):].strip()
+    data = parse_block_fields(body)
+
+    interval = data.get("interval")
+    text = data.get("text")
+    image = data.get("image")
+    buttons = data.get("buttons")
+
+    if not interval or not interval.isdigit():
+        return await m.reply("❌ interval phải là số phút\nVí dụ: interval: 30")
+
+    if not text:
+        return await m.reply("❌ thiếu text")
+
+    add_scheduled_post(
+        chat_id=m.chat.id,
+        interval_min=int(interval),
+        text=text,
+        image=image,
+        buttons=buttons
+    )
+
+    log_action(m.from_user.id, "add_post", m.chat.id)
+    await m.reply(f"✅ Đã tạo bài tự động mỗi {interval} phút")
+
+@dp.message(lambda m: m.text == "/posts")
+async def list_posts_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    posts = get_scheduled_posts()
+    if not posts:
+        return await m.reply("Chưa có bài tự động nào")
+
+    text = "📋 Danh sách bài tự động:\n\n"
+    for post_id, chat_id, interval_min, post_text, image, buttons, enabled, next_run in posts:
+        text += f"- ID: {post_id} | Chat: {chat_id} | {interval_min} phút\n"
+
+    await m.reply(text)
+
+@dp.message(lambda m: m.text and m.text.startswith("/delpost"))
+async def del_post_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    parts = m.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].isdigit():
+        return await m.reply("Cách dùng: /delpost 1")
+
+    post_id = int(parts[1])
+    remove_scheduled_post(post_id)
+    await m.reply(f"✅ Đã xoá bài tự động ID: {post_id}")
+
+# ================= PIN MESSAGE =================
+@dp.message(lambda m: m.text and m.text.lower() in ("ghimmes", "/ghimmes"))
+async def pin_message_cmd(m: types.Message):
+    if get_admin(m.from_user.id) not in ("super", "admin"):
+        return await m.reply("❌ 无权限")
+
+    if not m.reply_to_message:
+        return await m.reply("❌ Hãy reply vào bài viết cần ghim rồi gõ ghimmes")
+
+    try:
+        await bot.pin_chat_message(
+            chat_id=m.chat.id,
+            message_id=m.reply_to_message.message_id,
+            disable_notification=False
+        )
+        await m.reply("✅ Đã ghim bài viết")
+    except Exception as e:
+        await m.reply("❌ Bot không có quyền ghim bài viết")
+        print("pin_message_cmd error:", e)
+
 # ================= ANTI SCAM =================
 @dp.message()
 async def anti(m: types.Message):
     if not m.text:
         return
 
-    # Không xoá các lệnh bắt đầu bằng /
     if m.text.startswith("/"):
         return
 
@@ -326,19 +629,18 @@ async def ai(m: types.Message):
     if not m.text:
         return
 
-    # Không xử lý các lệnh bắt đầu bằng /
     if m.text.startswith("/"):
         return
 
-    # Chỉ trả lời khi:
-    # - chat private: luôn cho hỏi AI
-    # - group: phải có từ "ai" trong tin nhắn
+    match = find_keyword_match(m.text)
+    if match:
+        return
+
     if m.chat.type != "private" and "ai" not in m.text.lower():
         return
 
     prompt = m.text
 
-    # nếu người dùng gõ "ai xxx" thì bỏ phần "ai "
     if prompt.lower().startswith("ai "):
         prompt = prompt[3:]
     elif prompt.lower() == "ai":
@@ -369,6 +671,7 @@ async def groups():
 async def startup():
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(BASE_URL + "/webhook")
+    asyncio.create_task(auto_post_loop())
 
 @app.post("/webhook")
 async def webhook(req: Request):
