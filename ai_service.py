@@ -1,11 +1,41 @@
 import os
+import time
 from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-async def ask_ai(text):
+memory = {}
+last_ai = {}
+
+async def ask_ai(user_id, text):
+    # anti spam
+    if user_id in last_ai and time.time() - last_ai[user_id] < 2:
+        return "⏳ Đợi 1 chút..."
+
+    last_ai[user_id] = time.time()
+
+    # memory init
+    if user_id not in memory:
+        memory[user_id] = [
+            {
+                "role": "system",
+                "content": "Bạn là AI Telegram thông minh, trả lời ngắn gọn, tự nhiên, hơi cool."
+            }
+        ]
+
+    memory[user_id].append({"role": "user", "content": text})
+
+    # limit memory
+    if len(memory[user_id]) > 20:
+        memory[user_id] = memory[user_id][-10:]
+
     res = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role":"user","content":text}]
+        messages=memory[user_id]
     )
-    return res.choices[0].message.content
+
+    reply = res.choices[0].message.content
+
+    memory[user_id].append({"role": "assistant", "content": reply})
+
+    return reply
