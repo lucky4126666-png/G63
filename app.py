@@ -329,36 +329,43 @@ async def edit_key_cmd(m: types.Message):
         return await m.reply("❌ 无权限")
 
     body = m.text[len("/editkey"):].strip()
-    if not body:
-        return await m.reply(
-            "Cách dùng:\n"
-            "/editkey hello|Xin chào mới|https://img.com/new.jpg|Nút 1|https://a.com;Nút 2|https://b.com\n\n"
-            "Hoặc:\n"
-            "/editkey\n"
-            "key: hello\n"
-            "reply: Xin chào mới\n"
-            "image: https://img.com/new.jpg\n"
-            "buttons: Nút 1|https://a.com;Nút 2|https://b.com"
-        )
 
-    key = reply = image = buttons = None
+    key = None
+    reply_text = None
+    image = None
+    buttons = None
 
+    # Nếu reply vào ảnh thì tự lấy file_id ảnh
+    if m.reply_to_message:
+        image = get_replied_image_file_id(m.reply_to_message)
+
+    # Nếu reply vào tin nhắn text/caption thì lấy toàn bộ nội dung đó làm reply
+    replied_content = ""
+    if m.reply_to_message:
+        replied_content = get_message_content(m.reply_to_message)
+
+    # Dạng block
     if "\n" in body or "key:" in body.lower():
         data = parse_block_fields(body)
         key = data.get("key") or data.get("keyword")
-        reply = data.get("reply")
-        image = data.get("image")
+        reply_text = data.get("reply")
+        image = data.get("image") or image
         buttons = data.get("buttons")
     else:
+        # Dạng 1 dòng: /editkey key|reply|image|buttons
         parts = body.split("|", 3)
         if len(parts) >= 1:
-            key = parts[0].strip()
+            key = parts[0].strip() if parts[0].strip() else None
         if len(parts) >= 2:
-            reply = parts[1].strip() if parts[1].strip() else None
+            reply_text = parts[1].strip() if parts[1].strip() else None
         if len(parts) >= 3:
-            image = parts[2].strip() if parts[2].strip() else None
+            image = parts[2].strip() if parts[2].strip() else image
         if len(parts) >= 4:
             buttons = parts[3].strip() if parts[3].strip() else None
+
+    # Nếu không có reply_text trong lệnh thì lấy nguyên nội dung từ message được reply
+    if not reply_text and replied_content:
+        reply_text = replied_content
 
     if not key:
         return await m.reply("❌ Thiếu key")
@@ -369,7 +376,7 @@ async def edit_key_cmd(m: types.Message):
 
     old_key, old_reply, old_image, old_buttons = old
 
-    new_reply = reply if reply is not None else old_reply
+    new_reply = reply_text if reply_text is not None else old_reply
     new_image = image if image is not None else old_image
     new_buttons = buttons if buttons is not None else old_buttons
 
