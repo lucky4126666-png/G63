@@ -989,12 +989,24 @@ async def groups():
     return {"data": get_groups()}
 
 # ================= WEBHOOK =================
-@app.on_event("startup")
-async def startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     webhook_url = BASE_URL.rstrip("/") + "/webhook"
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(webhook_url)
-    asyncio.create_task(auto_post_loop())
+
+    task = asyncio.create_task(auto_post_loop())
+    yield
+
+    task.cancel()
+    try:
+        await task
+    except:
+        pass
+
+app = FastAPI(lifespan=lifespan)
 
 @app.post("/webhook")
 async def webhook(req: Request):
