@@ -184,3 +184,38 @@ def get_setting(key):
 
     conn.close()
     return row[0] if row else None
+    def add_keyword(key, reply, image=None, buttons=None):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS keywords (
+        key TEXT PRIMARY KEY,
+        reply TEXT,
+        image TEXT,
+        buttons TEXT
+    )
+    """)
+
+    cur.execute("""
+    INSERT INTO keywords(key, reply, image, buttons)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+    reply=excluded.reply,
+    image=excluded.image,
+    buttons=excluded.buttons
+    """, (key, reply, image, buttons))
+
+    conn.commit()
+    conn.close()
+
+
+def get_keywords():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT key, reply, image, buttons FROM keywords")
+    rows = cur.fetchall()
+
+    conn.close()
+    return rows
