@@ -99,6 +99,22 @@ async def bot_join(e: types.ChatMemberUpdated):
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
+    for u in m.new_chat_members:
+
+        # ❗ BỎ QUA BOT
+        if u.is_bot:
+            return
+
+        group_name = m.chat.title or "本群"
+
+        text = f"""欢迎 {u.full_name} 来到
+{group_name}
+
+⚠️注意：主动私聊你的都是骗子！
+"""
+
+        await m.answer(text)
+async def welcome(m: types.Message):
     chat = m.chat
     group_name = chat.title or "本群"
 
