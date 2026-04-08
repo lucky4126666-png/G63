@@ -53,31 +53,45 @@ async def bot_join(e: types.ChatMemberUpdated):
     if e.new_chat_member.status in ("member", "administrator"):
         chat_id = e.chat.id
 
-        # ===== UI BUTTON =====
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="公群导航", url="https://t.me/xbkf"),
             InlineKeyboardButton(text="供需频道", url="https://t.me/xbkf")
         ]])
 
-        # ===== MESSAGE INIT =====
         await bot.send_message(
             chat_id,
-            "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
+            "N组防骗助手为您服务,我正在进行相关初始化配置请稍后",
             reply_markup=kb
         )
 
-        # ===== CHECK ADMIN NGAY LÚC JOIN =====
         admins = await bot.get_chat_administrators(chat_id)
-        admin_ids = [a.user.id for a in admins]
 
-        has_admin = any(i in admin_ids for i in ADMIN_IDS)
+        real_admin_found = False
+        unknown_admins = []
 
-        # ❗ chỉ cảnh báo nếu KHÔNG có admin
-        if not has_admin:
+        for a in admins:
+            uid = a.user.id
+
+            if uid in ADMIN_IDS:
+                real_admin_found = True
+            else:
+                # lọc admin lạ
+                if a.status in ["administrator", "creator"]:
+                    unknown_admins.append(a.user.full_name)
+
+        # ❌ không có admin thật
+        if not real_admin_found:
             await bot.send_message(
                 chat_id,
                 "⚠️ 风险提示，本群没有检测到新币管理员。\n"
                 "有交易风险，请联系 @xbkf"
+            )
+
+        # ⚠️ có admin lạ
+        if unknown_admins:
+            await bot.send_message(
+                chat_id,
+                "⚠️ 检测到未知管理员：\n" + "\n".join(unknown_admins)
             )
 
 # ================= USER JOIN =================
