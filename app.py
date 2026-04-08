@@ -62,9 +62,23 @@ app = FastAPI()
 # ===== INIT DB =====
 init_db()
 
-if SUPER_ADMIN_ID:
-add_admin(SUPER_ADMIN_ID, "super")
+# ===== INIT DB =====
+init_db()
 
+def init_super_admin():
+    if SUPER_ADMIN_ID:
+        try:
+            add_admin(SUPER_ADMIN_ID, "super")
+        except Exception as e:
+            print("init_super_admin error:", e)
+
+@app.on_event("startup")
+async def startup():
+    init_super_admin()
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(BASE_URL.rstrip("/") + "/webhook")
+    asyncio.create_task(auto_post_loop())
+  
 # ================= HELPER =================
 def is_cmd(message: types.Message, *cmds):
 ...
