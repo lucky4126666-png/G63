@@ -5,14 +5,23 @@ def get_conn():
 
 def init_db():
     conn = get_conn()
-    cur = conn.cursor()
+    c = conn.cursor()
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS keywords (
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        trigger TEXT UNIQUE,
-        response TEXT
-    );
+        username TEXT UNIQUE,
+        password TEXT,
+        plan TEXT DEFAULT 'free'
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS bots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT,
+        owner_id INTEGER
+    )
     """)
 
     conn.commit()
