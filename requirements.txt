@@ -1,2 +1,5 @@
-aiohttp
+fastapi
+uvicorn
 aiogram
+psycopg2-binary
+python-dotenv
