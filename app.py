@@ -143,7 +143,13 @@ async def get_text():
 
 
 # ================= FASTAPI =================
+# ===== FASTAPI =====
 app = FastAPI()
+
+# ===== DASHBOARD =====
+@app.get("/admin", response_class=HTMLResponse)
+def admin():
+    return open("dashboard.html", encoding="utf-8").read()
 
 
 @app.on_event("startup")
