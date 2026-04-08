@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 START TG BOT PRO"
+echo "🚀 START WEBHOOK BOT"
 
 python3 -m venv venv
 source venv/bin/activate
