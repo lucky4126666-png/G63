@@ -1,14 +1,7 @@
-import psycopg2
-from psycopg2 import pool
-from config import DATABASE_URL
-
-db_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DATABASE_URL)
+import sqlite3
 
 def get_conn():
-    return db_pool.getconn()
-
-def release_conn(conn):
-    db_pool.putconn(conn)
+    return sqlite3.connect("data.db")
 
 def init_db():
     conn = get_conn()
@@ -16,11 +9,11 @@ def init_db():
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS keywords (
-        id SERIAL PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         trigger TEXT UNIQUE,
         response TEXT
     );
     """)
 
     conn.commit()
-    release_conn(conn)
+    conn.close()
