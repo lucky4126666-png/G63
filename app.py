@@ -67,6 +67,33 @@ if SUPER_ADMIN_ID:
 
 # ================= HELPER =================
 def is_cmd(message: types.Message, *cmds):
+    ...
+
+async def is_allowed(chat_id, user_id):
+    ...
+
+def normalize_key(key: str):
+    if not key:
+        return ""
+    return re.sub(r"\s+", "", key).strip()
+
+def get_message_content(msg: types.Message):
+    if not msg:
+        return ""
+    return (msg.text or msg.caption or "").strip()
+
+def get_replied_image_file_id(msg: types.Message):
+    if not msg:
+        return None
+
+    if msg.photo:
+        return msg.photo[-1].file_id
+
+    if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/"):
+        return msg.document.file_id
+
+    return None
+def is_cmd(message: types.Message, *cmds):
     if not message.text:
         return False
 
@@ -282,53 +309,73 @@ async def list_admins_cmd(m: types.Message):
 # ================= KEY COMMANDS =================
 @dp.message(lambda m: m.text and is_cmd(m, "/addkey"))
 async def add_key_cmd(m: types.Message):
-    if get_admin(m.from_user.id) not in ("super", "admin"):
-        return await m.reply("❌ 无权限")
+    try:
+        if get_admin(m.from_user.id) not in ("super", "admin"):
+            return await m.reply("❌ 无权限")
 
-    body = m.text[len("/addkey"):].strip()
+        body = m.text[len("/addkey"):].strip()
 
-    key = None
-    reply_text = None
-    image = None
-    buttons = None
+        key = None
+        reply_text = None
+        image = None
+        buttons = None
 
-    # lấy ảnh nếu reply vào ảnh
-    if m.reply_to_message:
-        image = get_replied_image_file_id(m.reply_to_message)
+        # nếu reply vào ảnh thì lấy file_id ảnh
+        if m.reply_to_message:
+            image = get_replied_image_file_id(m.reply_to_message)
 
-    # lấy nguyên nội dung reply
-    replied_content = get_full_message_content(m.reply_to_message) if m.reply_to_message else ""
+        # lấy nội dung bài được reply
+        replied_content = ""
+        if m.reply_to_message:
+            replied_content = get_message_content(m.reply_to_message)
 
-    # block format
-    if "\n" in body or "key:" in body.lower():
-        data = parse_block_fields(body)
-        key = data.get("key") or data.get("keyword")
-        reply_text = data.get("reply")
-        image = data.get("image") or image
-        buttons = data.get("buttons")
-    else:
-        # one-line format
-        parts = body.split("|", 3)
-        if len(parts) >= 1:
-            key = parts[0].strip() or None
-        if len(parts) >= 2:
-            reply_text = parts[1].strip() or None
-        if len(parts) >= 3:
-            image = parts[2].strip() or image
-        if len(parts) >= 4:
-            buttons = parts[3].strip() or None
+        # block format
+        if "\n" in body or "key:" in body.lower():
+            data = parse_block_fields(body)
+            key = data.get("key") or data.get("keyword")
+            reply_text = data.get("reply")
+            image = data.get("image") or image
+            buttons = data.get("buttons")
+        else:
+            # one-line format
+            parts = body.split("|", 3)
+            if len(parts) >= 1:
+                key = parts[0].strip() or None
+            if len(parts) >= 2:
+                reply_text = parts[1].strip() or None
+            if len(parts) >= 3:
+                image = parts[2].strip() or image
+            if len(parts) >= 4:
+                buttons = parts[3].strip() or None
 
-    # nếu không nhập reply_text thì lấy nguyên bài viết được reply
-    if not reply_text and replied_content:
-        reply_text = replied_content
+        # nếu không nhập reply_text thì lấy nguyên nội dung reply
+        if not reply_text and replied_content:
+            reply_text = replied_content
 
-    if not key or not reply_text:
-        return await m.reply("❌ Thiếu key hoặc nội dung bài viết")
+        if not key or not reply_text:
+            return await m.reply(
+                "❌ Thiếu key hoặc nội dung bài viết\n\n"
+                "Cách dùng:\n"
+                "1) Reply vào bài viết rồi gõ:\n"
+                "/addkey 上押\n\n"
+                "2) Hoặc:\n"
+                "/addkey 上押|Nội dung trả lời\n\n"
+                "3) Hoặc dạng block:\n"
+                "/addkey\n"
+                "key: 上押\n"
+                "reply: Nội dung trả lời\n"
+                "image: file_id_ảnh hoặc link ảnh\n"
+                "buttons: Nút 1|url;Nút 2|url;Nút 3|url;Nút 4|url"
+            )
 
-    key = normalize_key(key)
-    add_keyword(key, reply_text, image, buttons)
-    log_action(m.from_user.id, "add_keyword", m.chat.id)
-    await m.reply(f"✅ Đã lưu key: {key}")
+        key = normalize_key(key)
+        add_keyword(key, reply_text, image, buttons)
+        log_action(m.from_user.id, "add_keyword", m.chat.id)
+        await m.reply(f"✅ Đã lưu key: {key}")
+
+    except Exception as e:
+        print("add_key_cmd error:", e)
+        await m.reply(f"❌ Lỗi khi lưu key: {e}")
     
 @dp.message(lambda m: m.text and is_cmd(m, "/editkey"))
 async def edit_key_cmd(m: types.Message):
