@@ -1,7 +1,7 @@
 import os
 import re
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -104,7 +104,7 @@ async def del_admin_cmd(m: types.Message):
 
     remove_admin(user_id)
     log_action(m.from_user.id, "del_admin", m.chat.id)
-    await m.reply(f"✅ Đã gỡ quyền admin của user_id: {user_id}")
+    await m.reply(f"✅ Đã gỡ quyền admin cho user_id: {user_id}")
 
 @dp.message(lambda m: m.text == "/admins")
 async def list_admins_cmd(m: types.Message):
@@ -114,7 +114,7 @@ async def list_admins_cmd(m: types.Message):
     admins = get_all_admins()
     if not admins:
         return await m.reply("Chưa có admin nào")
-    
+
     text = "📋 Danh sách admin:\n\n"
     for user_id, role in admins:
         text += f"- {user_id} | {role}\n"
@@ -140,7 +140,6 @@ async def start(m: types.Message):
 async def bot_join(e: types.ChatMemberUpdated):
     if e.new_chat_member.status in ("member", "administrator"):
         chat_id = e.chat.id
-
         save_group(chat_id, e.chat.title)
 
         kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -148,20 +147,26 @@ async def bot_join(e: types.ChatMemberUpdated):
             InlineKeyboardButton(text="供需频道", url="https://t.me/xbkf")
         ]])
 
-        await bot.send_message(
-            chat_id,
-            "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
-            reply_markup=kb
-        )
+        try:
+            await bot.send_message(
+                chat_id,
+                "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
+                reply_markup=kb
+            )
+        except Exception as e:
+            print("bot_join send_message failed:", e)
 
         admins = await bot.get_chat_administrators(chat_id)
         ids = [a.user.id for a in admins]
 
         if not any(get_admin(i) for i in ids):
-            await bot.send_message(
-                chat_id,
-                "⚠️ 风险提示，本群没有检测到新币管理员。\n有交易风险，请联系 @xbkf"
-            )
+            try:
+                await bot.send_message(
+                    chat_id,
+                    "⚠️ 风险提示，本群没有检测到新币管理员。\n有交易风险，请联系 @xbkf"
+                )
+            except Exception as e:
+                print("risk warning send failed:", e)
 
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
@@ -193,7 +198,10 @@ async def welcome(m: types.Message):
             ]
         ])
 
-        await m.answer(text, reply_markup=kb)
+        try:
+            await m.answer(text, reply_markup=kb)
+        except Exception as e:
+            print("welcome send failed:", e)
 
 # ================= LOCK =================
 @dp.message(lambda m: m.text in ["/lock", "下课"])
@@ -201,10 +209,15 @@ async def lock_group(m: types.Message):
     if not await is_allowed(m.chat.id, m.from_user.id):
         return await m.reply("❌ 无权限")
 
-    await bot.set_chat_permissions(
-        m.chat.id,
-        permissions=types.ChatPermissions(can_send_messages=False)
-    )
+    try:
+        await bot.set_chat_permissions(
+            m.chat.id,
+            permissions=types.ChatPermissions(can_send_messages=False)
+        )
+    except Exception as e:
+        await m.reply("❌ 机器人没有权限修改群发言权限")
+        print("lock_group error:", e)
+        return
 
     log_action(m.from_user.id, "lock", m.chat.id)
 
@@ -213,10 +226,13 @@ async def lock_group(m: types.Message):
         InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
     ]])
 
-    await m.answer(
-        "本公群已下课关闭发言\n如需交易，请恢复后操作！",
-        reply_markup=kb
-    )
+    try:
+        await m.answer(
+            "本公群已下课关闭发言\n如需交易，请恢复后操作！",
+            reply_markup=kb
+        )
+    except Exception as e:
+        print("lock_group send failed:", e)
 
 # ================= OPEN =================
 @dp.message(lambda m: m.text in ["/open", "上课"])
@@ -224,10 +240,15 @@ async def open_group(m: types.Message):
     if not await is_allowed(m.chat.id, m.from_user.id):
         return await m.reply("❌ 无权限")
 
-    await bot.set_chat_permissions(
-        m.chat.id,
-        permissions=types.ChatPermissions(can_send_messages=True)
-    )
+    try:
+        await bot.set_chat_permissions(
+            m.chat.id,
+            permissions=types.ChatPermissions(can_send_messages=True)
+        )
+    except Exception as e:
+        await m.reply("❌ 机器人没有权限修改群发言权限")
+        print("open_group error:", e)
+        return
 
     log_action(m.from_user.id, "open", m.chat.id)
 
@@ -236,10 +257,13 @@ async def open_group(m: types.Message):
         InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
     ]])
 
-    await m.answer(
-        "本群已开启发言，可以正常作业",
-        reply_markup=kb
-    )
+    try:
+        await m.answer(
+            "本群已开启发言，可以正常作业",
+            reply_markup=kb
+        )
+    except Exception as e:
+        print("open_group send failed:", e)
 
 # ================= RENAME GROUP (担保表单) =================
 @dp.message(lambda m: "担保表单" in (m.text or ""))
@@ -247,7 +271,7 @@ async def rename_group(m: types.Message):
     if not await is_allowed(m.chat.id, m.from_user.id):
         return await m.reply("❌ 无权限")
 
-    text = m.text.replace("\n", " ")
+    text = (m.text or "").replace("\n", " ")
 
     def find(pattern):
         r = re.search(pattern, text)
@@ -268,34 +292,17 @@ async def rename_group(m: types.Message):
     new_title = f"{group}{number}-{rule}{name}"
 
     try:
-        # đổi tên nhóm
         await bot.set_chat_title(m.chat.id, new_title)
 
-        # bắt buộc gửi thông báo trong group
         try:
             await m.answer(f"担保规则写入成功\n{new_title}")
         except Exception as e:
-            # nếu không gửi được thì vẫn báo rõ lỗi
             await m.reply("⚠️ 群名已修改，但机器人没有权限发送消息")
-            print("Send message failed:", e)
+            print("rename_group send failed:", e)
 
     except Exception as e:
         await m.reply("❌ 修改群名失败，请检查机器人权限")
-        print("Set chat title failed:", e)
-    # ===== BUILD TÊN =====
-    new_title = f"{group}{number}-{rule}{name}"
-
-    try:
-        # đổi tên nhóm
-        await bot.set_chat_title(m.chat.id, new_title)
-
-        # thông báo giống bot Trung
-        await m.answer(
-            f"担保规则写入成功\n{new_title}"
-        )
-
-    except:
-        await m.reply("❌ 修改群名失败，请检查机器人权限")
+        print("rename_group error:", e)
 
 # ================= ANTI SCAM =================
 @dp.message()
@@ -310,8 +317,8 @@ async def anti(m: types.Message):
     if re.search(r"(http|t.me|www|\.com)", m.text.lower()):
         try:
             await m.delete()
-        except:
-            pass
+        except Exception as e:
+            print("anti delete failed:", e)
 
 # ================= AI =================
 @dp.message()
