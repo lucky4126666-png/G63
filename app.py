@@ -286,43 +286,50 @@ async def add_key_cmd(m: types.Message):
         return await m.reply("❌ 无权限")
 
     body = m.text[len("/addkey"):].strip()
-    key = reply = image = buttons = None
 
-    # nếu reply vào ảnh thì tự lấy file_id
-    if m.reply_to_message and m.reply_to_message.photo:
-        image = m.reply_to_message.photo[-1].file_id
+    key = None
+    reply_text = None
+    image = None
+    buttons = None
 
+    # lấy ảnh nếu reply vào ảnh
+    if m.reply_to_message:
+        image = get_replied_image_file_id(m.reply_to_message)
+
+    # lấy nguyên nội dung reply
+    replied_content = get_full_message_content(m.reply_to_message) if m.reply_to_message else ""
+
+    # block format
     if "\n" in body or "key:" in body.lower():
         data = parse_block_fields(body)
         key = data.get("key") or data.get("keyword")
-        reply = data.get("reply")
+        reply_text = data.get("reply")
         image = data.get("image") or image
         buttons = data.get("buttons")
     else:
+        # one-line format
         parts = body.split("|", 3)
+        if len(parts) >= 1:
+            key = parts[0].strip() or None
         if len(parts) >= 2:
-            key = parts[0].strip()
-            reply = parts[1].strip()
-            if len(parts) > 2 and parts[2].strip():
-                image = parts[2].strip()
-            if len(parts) > 3 and parts[3].strip():
-                buttons = parts[3].strip()
+            reply_text = parts[1].strip() or None
+        if len(parts) >= 3:
+            image = parts[2].strip() or image
+        if len(parts) >= 4:
+            buttons = parts[3].strip() or None
 
-    if not key or not reply:
-        return await m.reply(
-            "❌ Thiếu key hoặc reply\n\n"
-            "Cách dùng:\n"
-            "/addkey 上押|Nội dung trả lời\n"
-            "Hoặc reply vào ảnh rồi gõ:\n"
-            "/addkey 上押|Nội dung trả lời\n"
-            "Hoặc:\n"
-            "/addkey 上押|Nội dung trả lời|file_id_ảnh|Nút 1|url;Nút 2|url;Nút 3|url;Nút 4|url"
-        )
+    # nếu không nhập reply_text thì lấy nguyên bài viết được reply
+    if not reply_text and replied_content:
+        reply_text = replied_content
 
-    add_keyword(key, reply, image, buttons)
+    if not key or not reply_text:
+        return await m.reply("❌ Thiếu key hoặc nội dung bài viết")
+
+    key = normalize_key(key)
+    add_keyword(key, reply_text, image, buttons)
     log_action(m.from_user.id, "add_keyword", m.chat.id)
     await m.reply(f"✅ Đã lưu key: {key}")
-
+    
 @dp.message(lambda m: m.text and is_cmd(m, "/editkey"))
 async def edit_key_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
@@ -335,16 +342,11 @@ async def edit_key_cmd(m: types.Message):
     image = None
     buttons = None
 
-    # Nếu reply vào ảnh thì tự lấy file_id ảnh
     if m.reply_to_message:
         image = get_replied_image_file_id(m.reply_to_message)
 
-    # Nếu reply vào tin nhắn text/caption thì lấy toàn bộ nội dung đó làm reply
-    replied_content = ""
-    if m.reply_to_message:
-        replied_content = get_message_content(m.reply_to_message)
+    replied_content = get_full_message_content(m.reply_to_message) if m.reply_to_message else ""
 
-    # Dạng block
     if "\n" in body or "key:" in body.lower():
         data = parse_block_fields(body)
         key = data.get("key") or data.get("keyword")
@@ -352,29 +354,28 @@ async def edit_key_cmd(m: types.Message):
         image = data.get("image") or image
         buttons = data.get("buttons")
     else:
-        # Dạng 1 dòng: /editkey key|reply|image|buttons
         parts = body.split("|", 3)
         if len(parts) >= 1:
-            key = parts[0].strip() if parts[0].strip() else None
+            key = parts[0].strip() or None
         if len(parts) >= 2:
-            reply_text = parts[1].strip() if parts[1].strip() else None
+            reply_text = parts[1].strip() or None
         if len(parts) >= 3:
-            image = parts[2].strip() if parts[2].strip() else image
+            image = parts[2].strip() or image
         if len(parts) >= 4:
-            buttons = parts[3].strip() if parts[3].strip() else None
+            buttons = parts[3].strip() or None
 
-    # Nếu không có reply_text trong lệnh thì lấy nguyên nội dung từ message được reply
     if not reply_text and replied_content:
         reply_text = replied_content
 
     if not key:
         return await m.reply("❌ Thiếu key")
 
+    key = normalize_key(key)
     old = get_keyword(key)
     if not old:
         return await m.reply("❌ Không tìm thấy key này")
 
-    old_key, old_reply, old_image, old_buttons = old
+    _, old_reply, old_image, old_buttons = old
 
     new_reply = reply_text if reply_text is not None else old_reply
     new_image = image if image is not None else old_image
@@ -383,7 +384,7 @@ async def edit_key_cmd(m: types.Message):
     add_keyword(key, new_reply, new_image, new_buttons)
     log_action(m.from_user.id, "edit_keyword", m.chat.id)
     await m.reply(f"✅ Đã cập nhật key: {key}")
-
+    
 @dp.message(lambda m: m.text and is_cmd(m, "/showkey"))
 async def show_key_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
