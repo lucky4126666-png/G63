@@ -1,5 +1,5 @@
 fastapi
-uvicorn[standard]
-aiogram
-psycopg2-binary
+uvicorn
 python-dotenv
+openai
+python-telegram-bot
