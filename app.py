@@ -186,7 +186,12 @@ async def webhook(req: Request):
         print(traceback.format_exc())
 
     return {"ok": True}
-
+    
+@dp.message()
+async def catch_all(m: types.Message):
+    print("RECEIVED:", m.text)
+    await m.answer("BOT OK")
+    
 # ================= RUN =================
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=PORT)
