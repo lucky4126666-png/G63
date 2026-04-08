@@ -157,6 +157,11 @@ async def telegram_webhook(req: Request):
 def home():
     return {"status": "webhook running"}
 
+@app.post("/send")
+async def send_msg(data: dict):
+    await bot.send_message(data["chat_id"], data["text"])
+    return {"ok": True}
+    
 # ===== RUN =====
 import os
 
