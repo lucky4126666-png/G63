@@ -38,7 +38,6 @@ async def start(msg: types.Message):
 
     await msg.answer(text)
 
-
 # ===== AI HANDLER =====
 @dp.message()
 async def handle_message(msg: types.Message):
