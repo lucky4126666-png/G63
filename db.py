@@ -156,3 +156,33 @@ def log_action(user_id, action, chat_id):
 
     conn.commit()
     conn.close()
+def set_setting(key, value):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    """)
+
+    cur.execute("""
+    INSERT INTO settings(key, value)
+    VALUES (?,?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+    """, (key, value))
+
+    conn.commit()
+    conn.close()
+
+
+def get_setting(key):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT value FROM settings WHERE key=?", (key,))
+    r = cur.fetchone()
+
+    conn.close()
+    return r[0] if r else None
