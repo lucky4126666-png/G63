@@ -81,21 +81,35 @@ async def bot_join(e: types.ChatMemberUpdated):
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
+    chat = m.chat
+    group_name = chat.title or "本群"
+
     for u in m.new_chat_members:
-        if u.is_bot:
-            continue
-
         name = u.full_name
-        group = m.chat.title
+        
+        text = (
+            f"欢迎 {name} 来到\n"
+            f"{group_name}\n\n"
+            "交易前请先关注，担保流程【 @xinb 】\n\n"
+            "1.交易前认准群老板和业务员头衔，先看清楚置顶的群规则和报备模版；\n"
+            "2.交易前群老板方必须在公群内进行报备，客户确认报备内容，如客户没确认此报备视为无效报备；\n"
+            "3.交易过程中有任何变动需要在群内保留记录或者重新报备；\n"
+            "4.有任何问题可以联系新币24小时客服 @xbkf\n\n"
+            "⚠️注意：主动私聊你的都是骗子！\n"
+            "新币所有群（纠纷群、作业群、公群、专群）都由新币担保靓号拉群，\n"
+            "一切交易必须群内进行,切勿私下交易,请按照担保流程进行交易。\n\n"
+            "此用户是新币尊贵的VIP成员"
+        )
 
-        kb = InlineKeyboardMarkup(inline_keyboard=[[ 
-            InlineKeyboardButton(text="新币供需", url="https://t.me/xbkf"),
-            InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
-        ]])
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="新币供需", url="https://t.me/xbkf"),
+                InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
+            ]
+        ])
 
-        await m.answer(f"""欢迎 {name} 来到
-{group}
-
+        await m.answer(text, reply_markup=kb)
+        
 ⚠️注意：主动私聊你的都是骗子！
 """, reply_markup=kb)
 
