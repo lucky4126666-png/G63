@@ -19,7 +19,24 @@ dp = Dispatcher(storage=MemoryStorage())
 
 init_db()
 
-# ===== BOT =====
+# ===== START MESSAGE (PRIVATE ONLY) =====
+@dp.message(lambda msg: msg.text == "/start")
+async def start(msg: types.Message):
+    if msg.chat.type != "private":
+        return
+
+    text = """
+<b>🤖 欢迎使用机器人</b>
+
+👉 <a href="http://t.me/xbqgk?startgroup=foo">点击此处可以添加机器人进群</a>
+
+👉 <a href="https://t.me/xbkf/">更多服务，请访问客服</a>
+"""
+
+    await msg.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+# ===== AI BOT =====
 @dp.message()
 async def handler(msg: types.Message):
     if not msg.text:
@@ -28,14 +45,17 @@ async def handler(msg: types.Message):
     text = msg.text.strip()
     uid = msg.from_user.id
 
+    # ===== GROUP FILTER =====
     if msg.chat.type != "private":
         if "ai" not in text.lower() and not msg.reply_to_message:
             return
 
+    # ===== AI CHAT =====
     if text.startswith("ai ") or msg.chat.type != "private":
         clean = text.replace("ai ", "")
         reply = await ask_ai(uid, clean)
         await msg.reply(reply)
+
 
 # ===== FASTAPI =====
 app = FastAPI()
@@ -44,6 +64,8 @@ app = FastAPI()
 async def startup():
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(BASE_URL + "/webhook")
+    print("✅ Webhook set:", BASE_URL + "/webhook")
+
 
 @app.post("/webhook")
 async def webhook(req: Request):
@@ -51,6 +73,7 @@ async def webhook(req: Request):
     update = types.Update.model_validate(data)
     await dp.feed_update(bot, update)
     return {"ok": True}
+
 
 # ===== DASHBOARD =====
 @app.get("/dashboard")
@@ -61,9 +84,11 @@ def dashboard():
     <p>/webhook active</p>
     """
 
+
 @app.get("/")
 def home():
     return {"status": "running"}
+
 
 # ===== RUN =====
 if __name__ == "__main__":
