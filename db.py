@@ -48,6 +48,14 @@ def init_db():
     )
     """)
 
+    # SETTINGS
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -156,16 +164,21 @@ def log_action(user_id, action, chat_id):
 
     conn.commit()
     conn.close()
-def set_setting(key, value):
+
+def get_logs():
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )
-    """)
+    cur.execute("SELECT * FROM logs ORDER BY id DESC")
+    rows = cur.fetchall()
+
+    conn.close()
+    return rows
+
+# ================= SETTINGS =================
+def set_setting(key, value):
+    conn = get_conn()
+    cur = conn.cursor()
 
     cur.execute("""
     INSERT INTO settings(key, value)
@@ -175,7 +188,6 @@ def set_setting(key, value):
 
     conn.commit()
     conn.close()
-
 
 def get_setting(key):
     conn = get_conn()
