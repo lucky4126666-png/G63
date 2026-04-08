@@ -127,7 +127,7 @@ async def welcome(m: types.Message):
         ])
 
         await m.answer(text, reply_markup=kb)
-
+        
 # ================= LOCK =================
 @dp.message(lambda m: m.text in ["/lock", "下课"])
 async def lock_group(m: types.Message):
@@ -173,7 +173,45 @@ async def open_group(m: types.Message):
         "本群已开启发言，可以正常作业",
         reply_markup=kb
     )
+# ================= RENAME GROUP (担保表单) =================
+@dp.message(lambda m: "担保表单" in (m.text or ""))
+async def rename_group(m: types.Message):
+    if not await is_allowed(m.chat.id, m.from_user.id):
+        return await m.reply("❌ 无权限")
 
+    text = m.text.replace("\n", " ")
+
+    def find(pattern):
+        r = re.search(pattern, text)
+        return r.group(1).strip() if r else ""
+
+    group = find(r"组别[:：]\s*([^\s]+)")
+    name = find(r"名字[:：]\s*(.+?)\s*编号")
+    number = find(r"编号[:：]\s*(\d+)")
+    rule = find(r"规则[:：]\s*([^\s]+)")
+
+    # fallback nếu format lệch
+    if not name:
+        name = find(r"名字[:：]\s*(.+)")
+
+    if not group or not name or not number or not rule:
+        return await m.reply("❌ 表单解析失败，请检查格式")
+
+    # ===== BUILD TÊN =====
+    new_title = f"{group}{number}-{rule}{name}"
+
+    try:
+        # đổi tên nhóm
+        await bot.set_chat_title(m.chat.id, new_title)
+
+        # thông báo giống bot Trung
+        await m.answer(
+            f"担保规则写入成功\n{new_title}"
+        )
+
+    except:
+        await m.reply("❌ 修改群名失败，请检查机器人权限")
+        
 # ================= ANTI SCAM =================
 @dp.message()
 async def anti(m: types.Message):
