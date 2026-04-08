@@ -1,42 +1,9 @@
-<!DOCTYPE html>
-<html>
-<body>
+<h1>🚀 SaaS Dashboard</h1>
 
-<h2>SaaS Bot Dashboard</h2>
+<input id="user" placeholder="user">
+<input id="pass" placeholder="pass">
 
-<input id="user" placeholder="username">
-<input id="pass" placeholder="password">
 <button onclick="register()">Register</button>
+<button onclick="login()">Login</button>
 
-<hr>
-
-<input id="uid" placeholder="user_id">
-<input id="token" placeholder="bot token">
-<button onclick="createBot()">Create Bot</button>
-
-<hr>
-
-<input id="bid" placeholder="bot_id">
-<input id="key" placeholder="keyword">
-<input id="res" placeholder="response">
-<button onclick="addKey()">Add Keyword</button>
-
-<script>
-async function register(){
-  await fetch("/register?username="+user.value+"&password="+pass.value,{method:"POST"})
-  alert("ok")
-}
-
-async function createBot(){
-  await fetch("/create-bot?user_id="+uid.value+"&token="+token.value,{method:"POST"})
-  alert("bot created")
-}
-
-async function addKey(){
-  await fetch(`/add-key?bot_id=${bid.value}&trigger=${key.value}&response=${res.value}`,{method:"POST"})
-  alert("added")
-}
-</script>
-
-</body>
-</html>
+<script src="app.js"></script>
