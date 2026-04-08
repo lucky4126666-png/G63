@@ -497,53 +497,53 @@ async def list_keys_cmd(m: types.Message):
     await m.reply(text)
 
 # ================= HELP / GROUP ID / DELETE MSG =================
-   @dp.message(lambda m: m.text and is_cmd(m, "/help"))
+@dp.message(lambda m: m.text and is_cmd(m, "/help"))
 async def help_cmd(m: types.Message):
-    if m.chat.type != "private":
-        return
+if m.chat.type != "private":
+return
 
-    text = (
-        "📖 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>\n\n"
+text = (
+"📖 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>\n\n"
 
-        "👤 <b>QUYỀN HẠN</b>\n"
-        "• /myrole — xem quyền của bạn\n"
-        "• /admins — xem danh sách admin\n"
-        "• /promote — cấp admin (chỉ super admin)\n"
-        "• /demote — gỡ admin (chỉ super admin)\n\n"
+"👤 <b>QUYỀN HẠN</b>\n"
+"• /myrole — xem quyền của bạn\n"
+"• /admins — xem danh sách admin\n"
+"• /promote — cấp admin (chỉ super admin)\n"
+"• /demote — gỡ admin (chỉ super admin)\n\n"
 
-        "🏠 <b>QUẢN LÝ GROUP</b>\n"
-        "• /groupid hoặc /id — xem ID group\n"
-        "• /lock hoặc 下课 — khóa nhóm\n"
-        "• /open hoặc 上课 — mở nhóm\n"
-        "• ghimmes — ghim bài (reply vào bài)\n"
-        "• /delmsg — xoá bài (reply vào bài)\n\n"
+"🏠 <b>QUẢN LÝ GROUP</b>\n"
+"• /groupid hoặc /id — xem ID group\n"
+"• /lock hoặc 下课 — khóa nhóm\n"
+"• /open hoặc 上课 — mở nhóm\n"
+"• ghimmes — ghim bài (reply vào bài)\n"
+"• /delmsg — xoá bài (reply vào bài)\n\n"
 
-        "🔑 <b>KEY TỪ KHÓA</b>\n"
-        "• /addkey key|reply|image|buttons\n"
-        "• /editkey key|reply|image|buttons\n"
-        "• /showkey key\n"
-        "• /delkey key\n"
-        "• /keys\n\n"
+"🔑 <b>KEY TỪ KHÓA</b>\n"
+"• /addkey key|reply|image|buttons\n"
+"• /editkey key|reply|image|buttons\n"
+"• /showkey key\n"
+"• /delkey key\n"
+"• /keys\n\n"
 
-        "🕒 <b>BÀI TỰ ĐỘNG</b>\n"
-        "• /addpost\n"
-        "  interval: 30\n"
-        "  text: nội dung\n"
-        "  image: link ảnh hoặc file_id\n"
-        "  buttons: Nút 1|url;Nút 2|url;Nút 3|url;Nút 4|url\n"
-        "• /editpost 1\n"
-        "• /showpost 1\n"
-        "• /delpost 1\n"
-        "• /posts\n\n"
+"🕒 <b>BÀI TỰ ĐỘNG</b>\n"
+"• /addpost\n"
+"  interval: 30\n"
+"  text: nội dung\n"
+"  image: link ảnh hoặc file_id\n"
+"  buttons: Nút 1|url;Nút 2|url;Nút 3|url;Nút 4|url\n"
+"• /editpost 1\n"
+"• /showpost 1\n"
+"• /delpost 1\n"
+"• /posts\n\n"
 
-        "🤖 <b>LƯU Ý</b>\n"
-        "• Trong group bot chỉ phản hồi key đã lưu\n"
-        "• Reply vào ảnh để bot tự lấy file_id ảnh\n"
-        "• Ảnh phải là link trực tiếp hoặc file_id Telegram\n"
-        "• Lệnh trong group vẫn giữ nguyên như cũ\n"
-    )
+"🤖 <b>LƯU Ý</b>\n"
+"• Trong group bot chỉ phản hồi key đã lưu\n"
+"• Reply vào ảnh để bot tự lấy file_id ảnh\n"
+"• Ảnh phải là link trực tiếp hoặc file_id Telegram\n"
+"• Lệnh trong group vẫn giữ nguyên như cũ\n"
+)
 
-    await m.reply(text, parse_mode="HTML")
+await m.reply(text, parse_mode="HTML")
 
 @dp.message(lambda m: m.text and is_cmd(m, "/groupid", "/id"))
 async def group_id_cmd(m: types.Message):
