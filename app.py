@@ -288,31 +288,35 @@ async def add_key_cmd(m: types.Message):
     body = m.text[len("/addkey"):].strip()
     key = reply = image = buttons = None
 
+    # nếu reply vào ảnh thì tự lấy file_id
+    if m.reply_to_message and m.reply_to_message.photo:
+        image = m.reply_to_message.photo[-1].file_id
+
     if "\n" in body or "key:" in body.lower():
         data = parse_block_fields(body)
         key = data.get("key") or data.get("keyword")
         reply = data.get("reply")
-        image = data.get("image")
+        image = data.get("image") or image
         buttons = data.get("buttons")
     else:
         parts = body.split("|", 3)
         if len(parts) >= 2:
             key = parts[0].strip()
             reply = parts[1].strip()
-            image = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
-            buttons = parts[3].strip() if len(parts) > 3 and parts[3].strip() else None
+            if len(parts) > 2 and parts[2].strip():
+                image = parts[2].strip()
+            if len(parts) > 3 and parts[3].strip():
+                buttons = parts[3].strip()
 
     if not key or not reply:
         return await m.reply(
             "❌ Thiếu key hoặc reply\n\n"
             "Cách dùng:\n"
-            "/addkey hello|Xin chào|https://img.com/a.jpg|Nút 1|https://a.com;Nút 2|https://b.com;Nút 3|https://c.com;Nút 4|https://d.com\n\n"
+            "/addkey 上押|Nội dung trả lời\n"
+            "Hoặc reply vào ảnh rồi gõ:\n"
+            "/addkey 上押|Nội dung trả lời\n"
             "Hoặc:\n"
-            "/addkey\n"
-            "key: hello\n"
-            "reply: Xin chào\n"
-            "image: https://img.com/a.jpg\n"
-            "buttons: Nút 1|https://a.com;Nút 2|https://b.com;Nút 3|https://c.com;Nút 4|https://d.com"
+            "/addkey 上押|Nội dung trả lời|file_id_ảnh|Nút 1|url;Nút 2|url;Nút 3|url;Nút 4|url"
         )
 
     add_keyword(key, reply, image, buttons)
