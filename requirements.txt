@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 aiogram
 psycopg2-binary
 python-dotenv
