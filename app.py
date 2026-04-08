@@ -1,7 +1,7 @@
 import os
 import re
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,7 +9,19 @@ from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 import uvicorn
 
-from db import init_db, get_setting, set_setting
+from db import (
+    init_db,
+    get_setting,
+    set_setting,
+    get_admin,
+    add_admin,
+    remove_admin,
+    get_logs,
+    log_action,
+    get_all_admins,
+    save_group,
+    get_groups
+)
 from ai_service import ask_ai
 
 # ===== LOAD ENV =====
@@ -19,11 +31,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
 PORT = int(os.getenv("PORT", 8080))
 
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x]
-
-# ===== CREATE FASTAPI (PHẢI Ở TRƯỚC) =====
-app = FastAPI()
-
 # ===== BOT =====
 bot = Bot(
     token=BOT_TOKEN,
@@ -31,27 +38,43 @@ bot = Bot(
 )
 
 dp = Dispatcher(storage=MemoryStorage())
+
+# ===== FASTAPI =====
+app = FastAPI()
+
+# ===== INIT DB =====
 init_db()
 
-# ================= DASHBOARD =================
-@app.get("/admin", response_class=HTMLResponse)
-def admin():
-    return open("dashboard.html", encoding="utf-8").read()
+# ================= HELPER =================
+async def is_allowed(chat_id, user_id):
+    role = get_admin(user_id)
+    if role == "super":
+        return True
 
-@app.post("/admin/set")
-async def set_text(data: dict):
-    set_setting("start_text", data["text"])
-    return {"ok": True}
-
-@app.get("/admin/get")
-async def get_text():
-    return {"text": get_setting("start_text")}
-
+    admins = await bot.get_chat_administrators(chat_id)
+    return any(a.user.id == user_id for a in admins)
+    
 # ================= START =================
+@dp.message(lambda m: m.text == "/start")
+async def start(m: types.Message):
+    if m.chat.type != "private":
+        return
+
+    text = get_setting("start_text") or (
+        "点击此处可以添加机器人进群\n"
+        "http://t.me/xbqgk?startgroup=foo\n\n"
+        "更多服务，请访问 https://t.me/xbkf/"
+    )
+
+    await m.answer(text)
+
+# ================= BOT JOIN =================
 @dp.my_chat_member()
 async def bot_join(e: types.ChatMemberUpdated):
     if e.new_chat_member.status in ("member", "administrator"):
         chat_id = e.chat.id
+
+        save_group(chat_id, e.chat.title)
 
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="公群导航", url="https://t.me/xbkf"),
@@ -60,40 +83,19 @@ async def bot_join(e: types.ChatMemberUpdated):
 
         await bot.send_message(
             chat_id,
-            "N组防骗助手为您服务,我正在进行相关初始化配置请稍后",
+            "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
             reply_markup=kb
         )
 
         admins = await bot.get_chat_administrators(chat_id)
+        ids = [a.user.id for a in admins]
 
-        real_admin_found = False
-        unknown_admins = []
-
-        for a in admins:
-            uid = a.user.id
-
-            if uid in ADMIN_IDS:
-                real_admin_found = True
-            else:
-                # lọc admin lạ
-                if a.status in ["administrator", "creator"]:
-                    unknown_admins.append(a.user.full_name)
-
-        # ❌ không có admin thật
-        if not real_admin_found:
+        if not any(get_admin(i) for i in ids):
             await bot.send_message(
                 chat_id,
-                "⚠️ 风险提示，本群没有检测到新币管理员。\n"
-                "有交易风险，请联系 @xbkf"
+                "⚠️ 风险提示，本群没有检测到新币管理员。\n有交易风险，请联系 @xbkf"
             )
-
-        # ⚠️ có admin lạ
-        if unknown_admins:
-            await bot.send_message(
-                chat_id,
-                "⚠️ 检测到未知管理员：\n" + "\n".join(unknown_admins)
-            )
-
+            
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
@@ -102,7 +104,7 @@ async def welcome(m: types.Message):
 
     for u in m.new_chat_members:
         name = u.full_name
-
+        
         text = (
             f"欢迎 {name} 来到\n"
             f"{group_name}\n\n"
@@ -126,15 +128,59 @@ async def welcome(m: types.Message):
 
         await m.answer(text, reply_markup=kb)
 
+# ================= LOCK =================
+@dp.message(lambda m: m.text in ["/lock", "下课"])
+async def lock_group(m: types.Message):
+    if not await is_allowed(m.chat.id, m.from_user.id):
+        return await m.reply("❌ 无权限")
+
+    await bot.set_chat_permissions(
+        m.chat.id,
+        permissions=types.ChatPermissions(can_send_messages=False)
+    )
+
+    log_action(m.from_user.id, "lock", m.chat.id)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="新币供需", url="https://t.me/xbkf"),
+        InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
+    ]])
+
+    await m.answer(
+        "本公群已下课关闭发言\n如需交易，请恢复后操作！",
+        reply_markup=kb
+    )
+
+# ================= OPEN =================
+@dp.message(lambda m: m.text in ["/open", "上课"])
+async def open_group(m: types.Message):
+    if not await is_allowed(m.chat.id, m.from_user.id):
+        return await m.reply("❌ 无权限")
+
+    await bot.set_chat_permissions(
+        m.chat.id,
+        permissions=types.ChatPermissions(can_send_messages=True)
+    )
+
+    log_action(m.from_user.id, "open", m.chat.id)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="新币供需", url="https://t.me/xbkf"),
+        InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
+    ]])
+
+    await m.answer(
+        "本群已开启发言，可以正常作业",
+        reply_markup=kb
+    )
+
 # ================= ANTI SCAM =================
 @dp.message()
 async def anti(m: types.Message):
     if not m.text:
         return
 
-    text = m.text.lower()
-
-    if re.search(r"(http|t.me|www|\.com)", text):
+    if re.search(r"(http|t.me|www|\.com)", m.text.lower()):
         try:
             await m.delete()
         except:
@@ -152,9 +198,26 @@ async def ai(m: types.Message):
     reply = await ask_ai(m.from_user.id, m.text.replace("ai ", ""))
     await m.reply(reply)
 
+# ================= DASHBOARD =================
+@app.get("/dashboard")
+def dashboard():
+    return FileResponse("frontend/index.html")
+
+@app.get("/admin/list")
+async def admin_list():
+    return {"data": get_all_admins()}
+
+@app.get("/admin/logs")
+async def logs():
+    return {"data": get_logs()}
+
+@app.get("/admin/groups")
+async def groups():
+    return {"data": get_groups()}
+
 # ================= WEBHOOK =================
 @app.on_event("startup")
-async def start_app():
+async def startup():
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(BASE_URL + "/webhook")
 
