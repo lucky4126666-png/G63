@@ -1,15 +1,18 @@
 import asyncio
 import logging
-from fastapi import FastAPI
-from aiogram import Bot, Dispatcher
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+import sqlite3
+
+from fastapi import FastAPI, Request
+from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+
 import uvicorn
 
-from config import BOT_TOKEN, PORT, ADMIN_ID
-from db import init_db, get_conn, release_conn
+from config import BOT_TOKEN, BASE_URL, PORT, ADMIN_ID
+from db import init_db, get_conn
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,30 +28,27 @@ def load_keywords():
     cur = conn.cursor()
     cur.execute("SELECT trigger, response FROM keywords")
     data = cur.fetchall()
-    release_conn(conn)
-
+    conn.close()
     KEYWORDS = {k: v for k, v in data}
-    logging.info(f"🔥 Loaded {len(KEYWORDS)} keywords")
+    print("🔥 Loaded", len(KEYWORDS), "keywords")
 
 def add_keyword(trigger, response):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("""
-    INSERT INTO keywords (trigger, response)
-    VALUES (%s,%s)
-    ON CONFLICT (trigger)
-    DO UPDATE SET response = EXCLUDED.response
-    """, (trigger, response))
+    cur.execute(
+        "INSERT OR REPLACE INTO keywords (trigger, response) VALUES (?,?)",
+        (trigger, response)
+    )
     conn.commit()
-    release_conn(conn)
+    conn.close()
     load_keywords()
 
 def delete_keyword(trigger):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("DELETE FROM keywords WHERE trigger=%s", (trigger,))
+    cur.execute("DELETE FROM keywords WHERE trigger=?", (trigger,))
     conn.commit()
-    release_conn(conn)
+    conn.close()
     load_keywords()
 
 # ===== FSM =====
@@ -63,25 +63,22 @@ def menu():
         [InlineKeyboardButton(text="➕ Thêm keyword", callback_data="add")],
         [InlineKeyboardButton(text="📋 Danh sách", callback_data="list")],
         [InlineKeyboardButton(text="🗑️ Xoá keyword", callback_data="delete")],
-        [InlineKeyboardButton(text="📊 Stats", callback_data="stats")]
     ])
 
-# ===== ROUTER =====
+# ===== HANDLER =====
 @dp.message()
-async def handler(msg: Message, state: FSMContext):
+async def handler(msg: types.Message, state: FSMContext):
     if not msg.text:
         return
 
     text = msg.text.strip()
     uid = msg.from_user.id
 
-    # ADMIN PANEL
     if text == "/admin":
         if uid != ADMIN_ID:
             return await msg.answer("❌ No permission")
-        return await msg.answer("⚙️ ADMIN PANEL", reply_markup=menu())
+        return await msg.answer("⚙️ ADMIN", reply_markup=menu())
 
-    # FSM FLOW
     current = await state.get_state()
 
     if current == AdminState.key:
@@ -100,7 +97,6 @@ async def handler(msg: Message, state: FSMContext):
         await msg.answer("🗑️ Deleted")
         return await state.clear()
 
-    # AUTO REPLY
     if text.startswith("/"):
         return
 
@@ -110,8 +106,8 @@ async def handler(msg: Message, state: FSMContext):
         if k in text_lower:
             return await msg.reply(v)
 
-    # ANTI SPAM
-    if any(x in text_lower for x in ["http", "t.me", ".com", "www"]):
+    # anti spam
+    if any(x in text_lower for x in ["http", "t.me", ".com"]):
         try:
             await msg.delete()
         except:
@@ -119,7 +115,7 @@ async def handler(msg: Message, state: FSMContext):
 
 # ===== CALLBACK =====
 @dp.callback_query()
-async def callback(cb: CallbackQuery, state: FSMContext):
+async def callback(cb: types.CallbackQuery, state: FSMContext):
     if cb.from_user.id != ADMIN_ID:
         return
 
@@ -135,9 +131,6 @@ async def callback(cb: CallbackQuery, state: FSMContext):
         await cb.message.answer("👉 Nhập key:")
         await state.set_state(AdminState.delete)
 
-    elif cb.data == "stats":
-        await cb.message.answer(f"📊 {len(KEYWORDS)} keywords")
-
 # ===== FASTAPI =====
 app = FastAPI()
 
@@ -145,13 +138,22 @@ app = FastAPI()
 async def startup():
     init_db()
     load_keywords()
-    asyncio.create_task(dp.start_polling(bot))
+
+    webhook_url = f"{BASE_URL}/webhook"
+    await bot.set_webhook(webhook_url)
+    print("✅ Webhook set:", webhook_url)
+
+@app.post("/webhook")
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    update = types.Update.model_validate(data)
+    await dp.feed_update(bot, update)
+    return {"ok": True}
 
 @app.get("/")
 def home():
-    return {"status": "running"}
+    return {"status": "webhook running"}
 
 # ===== RUN =====
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
