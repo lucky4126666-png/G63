@@ -1,39 +1,16 @@
-import asyncio
-from aiogram import Bot, Dispatcher
-from bot.handlers import register_handlers
+import telegram
+from telegram.request import HTTPXRequest
 
 bots = {}
 
-async def run_bot(token):
-    while True:
-        try:
-            bot = Bot(token)
-            dp = Dispatcher()
+def get_bot(token):
+    if token not in bots:
+        bots[token] = telegram.Bot(
+            token=token,
+            request=HTTPXRequest(connection_pool_size=10)
+        )
+    return bots[token]
 
-            register_handlers(dp)
-
-            print(f"🤖 RUNNING: {token[:8]}")
-
-            await dp.start_polling(bot)
-
-        except Exception as e:
-            print(f"🔥 CRASH: {e}")
-            await asyncio.sleep(3)
-
-
-async def start_bot(token):
-    if token in bots:
-        return
-
-    task = asyncio.create_task(run_bot(token))
-    bots[token] = task
-
-
-async def load_all_bots():
-    from core.db import pool
-
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT token FROM bots WHERE is_active=TRUE")
-
-        for r in rows:
-            await start_bot(r["token"])
+async def send(token, chat_id, text):
+    bot = get_bot(token)
+    await bot.send_message(chat_id, text)
