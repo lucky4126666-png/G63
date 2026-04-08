@@ -1,60 +1,26 @@
-import os
-import asyncio
-import logging
-
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
-
-import uvicorn
+import os
 from dotenv import load_dotenv
+import uvicorn
 
-from ai_service import ask_ai
-
-# ===== ENV =====
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
-BASE_URL = os.getenv("BASE_URL", "")
-
-logging.basicConfig(level=logging.INFO)
+BASE_URL = os.getenv("BASE_URL")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# ===== HANDLER (FIXED 100%) =====
 @dp.message()
 async def handler(msg: types.Message):
     if not msg.text:
         return
+    await msg.reply("🔥 Bot OK")
 
-    text = msg.text.strip()
-    uid = msg.from_user.id
-
-    # ===== GROUP FILTER =====
-    if msg.chat.type != "private":
-        if "ai" not in text.lower() and not msg.reply_to_message:
-            return
-
-    # ===== AI CHAT =====
-    if text.startswith("ai ") or msg.chat.type != "private":
-        clean = text.replace("ai ", "")
-        reply = await ask_ai(uid, clean)
-        await msg.reply(reply)
-        return
-
-# ===== FASTAPI =====
 app = FastAPI()
-
-@app.on_event("startup")
-async def startup():
-    await bot.delete_webhook(drop_pending_updates=True)
-
-    if BASE_URL:
-        webhook_url = BASE_URL + "/webhook"
-        await bot.set_webhook(webhook_url)
-        print("✅ Webhook:", webhook_url)
 
 @app.post("/webhook")
 async def webhook(req: Request):
@@ -65,8 +31,12 @@ async def webhook(req: Request):
 
 @app.get("/")
 def home():
-    return {"status": "AI bot running"}
+    return {"status": "ok"}
 
-# ===== RUN =====
+@app.on_event("startup")
+async def startup():
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(BASE_URL + "/webhook")
+
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=PORT)
