@@ -36,8 +36,7 @@ async def start(msg: types.Message):
         "更多服务，请访问 https://t.me/xbkf/"
     )
 
-    await msg.answer(text)
-
+    await msg.answer(text, disable_web_page_preview=True)
 # ===== AI HANDLER =====
 @dp.message()
 async def handle_message(msg: types.Message):
