@@ -16,14 +16,14 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+BASE_URL = os.getenv("BASE_URL", "")
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# ===== HANDLER =====
+# ===== HANDLER (FIXED 100%) =====
 @dp.message()
 async def handler(msg: types.Message):
     if not msg.text:
@@ -41,7 +41,8 @@ async def handler(msg: types.Message):
     if text.startswith("ai ") or msg.chat.type != "private":
         clean = text.replace("ai ", "")
         reply = await ask_ai(uid, clean)
-        return await msg.reply(reply)
+        await msg.reply(reply)
+        return
 
 # ===== FASTAPI =====
 app = FastAPI()
@@ -50,9 +51,10 @@ app = FastAPI()
 async def startup():
     await bot.delete_webhook(drop_pending_updates=True)
 
-    webhook_url = os.getenv("BASE_URL", "") + "/webhook"
-    if webhook_url:
+    if BASE_URL:
+        webhook_url = BASE_URL + "/webhook"
         await bot.set_webhook(webhook_url)
+        print("✅ Webhook:", webhook_url)
 
 @app.post("/webhook")
 async def webhook(req: Request):
