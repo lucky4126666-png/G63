@@ -14,18 +14,16 @@ async def ask_ai(user_id, text):
 
     last_ai[user_id] = time.time()
 
-    # memory init
     if user_id not in memory:
         memory[user_id] = [
             {
                 "role": "system",
-                "content": "Bạn là AI Telegram thông minh, trả lời ngắn gọn, tự nhiên, hơi cool."
+                "content": "Bạn là AI Telegram thông minh, trả lời tự nhiên, ngắn gọn."
             }
         ]
 
     memory[user_id].append({"role": "user", "content": text})
 
-    # limit memory
     if len(memory[user_id]) > 20:
         memory[user_id] = memory[user_id][-10:]
 
