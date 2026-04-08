@@ -50,3 +50,13 @@ def get_setting(key):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
+    
+def get_admin(user_id):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT role FROM admins WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+
+    conn.close()
+    return row[0] if row else None
