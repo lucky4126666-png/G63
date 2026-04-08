@@ -25,11 +25,11 @@ async def start(msg: types.Message):
     if msg.chat.type != "private":
         return
 
-    text = (
-    "点击此处可以添加机器人进群\n"
-    "http://t.me/xbqgk?startgroup=foo\n\n"
-    "更多服务，请访问 https://t.me/xbkf/"
-)
+   text = """点击此处可以添加机器人进群
+http://t.me/xbqgk?startgroup=foo
+
+更多服务，请访问 https://t.me/xbkf/
+"""
 
     await msg.answer(text)
 # ===== AI BOT =====
