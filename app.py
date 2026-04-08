@@ -55,26 +55,10 @@ async def is_allowed(chat_id, user_id):
     return any(a.user.id == user_id for a in admins)
     
 # ================= START =================
-@dp.message(lambda m: m.text == "/start")
-async def start(m: types.Message):
-    if m.chat.type != "private":
-        return
-
-    text = get_setting("start_text") or (
-        "点击此处可以添加机器人进群\n"
-        "http://t.me/xbqgk?startgroup=foo\n\n"
-        "更多服务，请访问 https://t.me/xbkf/"
-    )
-
-    await m.answer(text)
-
-# ================= BOT JOIN =================
 @dp.my_chat_member()
 async def bot_join(e: types.ChatMemberUpdated):
     if e.new_chat_member.status in ("member", "administrator"):
         chat_id = e.chat.id
-
-        save_group(chat_id, e.chat.title)
 
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="公群导航", url="https://t.me/xbkf"),
@@ -83,19 +67,40 @@ async def bot_join(e: types.ChatMemberUpdated):
 
         await bot.send_message(
             chat_id,
-            "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
+            "N组防骗助手为您服务,我正在进行相关初始化配置请稍后",
             reply_markup=kb
         )
 
         admins = await bot.get_chat_administrators(chat_id)
-        ids = [a.user.id for a in admins]
 
-        if not any(get_admin(i) for i in ids):
+        real_admin_found = False
+        unknown_admins = []
+
+        for a in admins:
+            uid = a.user.id
+
+            if uid in ADMIN_IDS:
+                real_admin_found = True
+            else:
+                # lọc admin lạ
+                if a.status in ["administrator", "creator"]:
+                    unknown_admins.append(a.user.full_name)
+
+        # ❌ không có admin thật
+        if not real_admin_found:
             await bot.send_message(
                 chat_id,
-                "⚠️ 风险提示，本群没有检测到新币管理员。\n有交易风险，请联系 @xbkf"
+                "⚠️ 风险提示，本群没有检测到新币管理员。\n"
+                "有交易风险，请联系 @xbkf"
             )
-            
+
+        # ⚠️ có admin lạ
+        if unknown_admins:
+            await bot.send_message(
+                chat_id,
+                "⚠️ 检测到未知管理员：\n" + "\n".join(unknown_admins)
+            )
+
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
@@ -104,7 +109,7 @@ async def welcome(m: types.Message):
 
     for u in m.new_chat_members:
         name = u.full_name
-        
+
         text = (
             f"欢迎 {name} 来到\n"
             f"{group_name}\n\n"
