@@ -25,17 +25,13 @@ async def start(msg: types.Message):
     if msg.chat.type != "private":
         return
 
-    text = """
-<b>🤖 欢迎使用机器人</b>
+    text = (
+    "点击此处可以添加机器人进群\n"
+    "http://t.me/xbqgk?startgroup=foo\n\n"
+    "更多服务，请访问 https://t.me/xbkf/"
+)
 
-👉 <a href="http://t.me/xbqgk?startgroup=foo">点击此处可以添加机器人进群</a>
-
-👉 <a href="https://t.me/xbkf/">更多服务，请访问客服</a>
-"""
-
-    await msg.answer(text, parse_mode="HTML", disable_web_page_preview=True)
-
-
+    await msg.answer(text)
 # ===== AI BOT =====
 @dp.message()
 async def handler(msg: types.Message):
