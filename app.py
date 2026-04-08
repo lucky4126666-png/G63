@@ -108,11 +108,13 @@ if text.startswith("ai "):
             return await msg.reply(v)
 
     # anti spam
-    if any(x in text_lower for x in ["http", "t.me", ".com"]):
-        try:
-            await msg.delete()
-        except:
-            pass
+    import re
+
+if re.search(r"(http|t\.me|www|\.com|\.xyz|\.top)", text_lower):
+    try:
+        await msg.delete()
+    except:
+        pass
 
 # ===== CALLBACK =====
 @dp.callback_query()
