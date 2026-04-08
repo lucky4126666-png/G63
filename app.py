@@ -8,59 +8,69 @@ import uvicorn
 from db import init_db
 from ai_service import ask_ai
 
+# ===== LOAD ENV =====
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("BASE_URL")
 PORT = int(os.getenv("PORT", 8080))
 
+if not BOT_TOKEN:
+    raise Exception("❌ BOT_TOKEN missing")
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# ===== INIT DB =====
 init_db()
 
-# ===== START MESSAGE (PRIVATE ONLY) =====
+# ===== START MESSAGE =====
 @dp.message(lambda msg: msg.text == "/start")
 async def start(msg: types.Message):
     if msg.chat.type != "private":
         return
 
-   text = """点击此处可以添加机器人进群
-http://t.me/xbqgk?startgroup=foo
-
-更多服务，请访问 https://t.me/xbkf/
-"""
+    text = (
+        "点击此处可以添加机器人进群\n"
+        "http://t.me/xbqgk?startgroup=foo\n\n"
+        "更多服务，请访问 https://t.me/xbkf/"
+    )
 
     await msg.answer(text)
-# ===== AI BOT =====
+
+
+# ===== AI HANDLER =====
 @dp.message()
-async def handler(msg: types.Message):
+async def handle_message(msg: types.Message):
     if not msg.text:
         return
 
     text = msg.text.strip()
-    uid = msg.from_user.id
+    user_id = msg.from_user.id
 
-    # ===== GROUP FILTER =====
+    # group filter
     if msg.chat.type != "private":
         if "ai" not in text.lower() and not msg.reply_to_message:
             return
 
-    # ===== AI CHAT =====
     if text.startswith("ai ") or msg.chat.type != "private":
         clean = text.replace("ai ", "")
-        reply = await ask_ai(uid, clean)
+        reply = await ask_ai(user_id, clean)
         await msg.reply(reply)
 
 
 # ===== FASTAPI =====
 app = FastAPI()
 
+
 @app.on_event("startup")
 async def startup():
     await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(BASE_URL + "/webhook")
-    print("✅ Webhook set:", BASE_URL + "/webhook")
+
+    if BASE_URL:
+        webhook_url = BASE_URL + "/webhook"
+        await bot.set_webhook(webhook_url)
+        print("✅ Webhook:", webhook_url)
 
 
 @app.post("/webhook")
@@ -71,19 +81,18 @@ async def webhook(req: Request):
     return {"ok": True}
 
 
-# ===== DASHBOARD =====
-@app.get("/dashboard")
-def dashboard():
-    return """
-    <h1>🚀 AI SaaS Dashboard</h1>
-    <p>Bot đang chạy OK</p>
-    <p>/webhook active</p>
-    """
-
-
 @app.get("/")
 def home():
     return {"status": "running"}
+
+
+@app.get("/dashboard")
+def dashboard():
+    return """
+    <h2>🚀 AI BOT RUNNING</h2>
+    <p>Webhook OK</p>
+    <p>Memory DB OK</p>
+    """
 
 
 # ===== RUN =====
