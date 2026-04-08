@@ -8,19 +8,11 @@ def init_db():
     c = conn.cursor()
 
     c.execute("""
-    CREATE TABLE IF NOT EXISTS users (
+    CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT,
-        plan TEXT DEFAULT 'free'
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS bots (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        token TEXT,
-        owner_id INTEGER
+        user_id INTEGER,
+        role TEXT,
+        content TEXT
     )
     """)
 
