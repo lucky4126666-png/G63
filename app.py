@@ -195,7 +195,7 @@ def dashboard():
     return html
 
 # ================= WEBHOOK =================
-@app.on_event("startup")
+@app.router.on_event("startup")
 async def startup():
     load_keywords()
     await bot.set_webhook(BASE_URL + "/webhook")
