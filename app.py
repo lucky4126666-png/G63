@@ -48,6 +48,39 @@ async def get_text():
     return {"text": get_setting("start_text")}
 
 # ================= START =================
+@dp.my_chat_member()
+async def bot_join(e: types.ChatMemberUpdated):
+    if e.new_chat_member.status in ("member", "administrator"):
+        chat_id = e.chat.id
+
+        # ===== UI BUTTON =====
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="公群导航", url="https://t.me/xbkf"),
+            InlineKeyboardButton(text="供需频道", url="https://t.me/xbkf")
+        ]])
+
+        # ===== MESSAGE INIT =====
+        await bot.send_message(
+            chat_id,
+            "组防骗助手为您服务,我正在进行相关初始化配置请稍后",
+            reply_markup=kb
+        )
+
+        # ===== CHECK ADMIN NGAY LÚC JOIN =====
+        admins = await bot.get_chat_administrators(chat_id)
+        admin_ids = [a.user.id for a in admins]
+
+        has_admin = any(i in admin_ids for i in ADMIN_IDS)
+
+        # ❗ chỉ cảnh báo nếu KHÔNG có admin
+        if not has_admin:
+            await bot.send_message(
+                chat_id,
+                "⚠️ 风险提示，本群没有检测到新币管理员。\n"
+                "有交易风险，请联系 @xbkf"
+            )
+
+# ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
     chat = m.chat
@@ -78,44 +111,6 @@ async def welcome(m: types.Message):
         ])
 
         await m.answer(text, reply_markup=kb)
-
-        # ===== CHECK ADMIN =====
-        admins = await bot.get_chat_administrators(chat.id)
-        admin_ids = [a.user.id for a in admins]
-
-        if not any(i in admin_ids for i in ADMIN_IDS):
-            await m.answer(
-                "⚠️ 风险提示，本群没有检测到新币管理员。\n"
-                "有交易风险，请联系 @xbkf"
-            )
-# ================= USER JOIN =================
-@dp.message(lambda m: m.new_chat_members)
-async def welcome(m: types.Message):
-    chat = m.chat
-    group_name = chat.title
-
-    for u in m.new_chat_members:
-        text = f"""欢迎 {u.full_name} 来到
-{group_name}
-
-⚠️注意：主动私聊你的都是骗子！
-"""
-
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="新币供需", url="https://t.me/xbkf"),
-            InlineKeyboardButton(text="新币公群", url="https://t.me/xbkf")
-        ]])
-
-        await m.answer(text, reply_markup=kb)
-
-        admins = await bot.get_chat_administrators(chat.id)
-        ids = [a.user.id for a in admins]
-
-        if not any(i in ids for i in ADMIN_IDS):
-            await m.answer(
-                "⚠️ 风险提示，本群没有检测到新币管理员。\n"
-                "有交易风险，请联系 @xbkf"
-            )
 
 # ================= ANTI SCAM =================
 @dp.message()
