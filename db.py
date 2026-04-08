@@ -1,3 +1,4 @@
+import time
 import sqlite3
 
 DB_NAME = "data.db"
@@ -58,7 +59,20 @@ def init_db():
 
     conn.commit()
     conn.close()
-
+    
+    # SCHEDULED POSTS
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id INTEGER,
+        interval_min INTEGER,
+        text TEXT,
+        image TEXT,
+        buttons TEXT,
+        enabled INTEGER DEFAULT 1,
+        next_run INTEGER
+    )
+    """)
 # ================= ADMIN =================
 def add_admin(user_id, role="admin"):
     conn = get_conn()
@@ -198,3 +212,78 @@ def get_setting(key):
 
     conn.close()
     return r[0] if r else None
+def remove_keyword(key):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM keywords WHERE key=?", (key,))
+    conn.commit()
+    conn.close()
+
+
+def add_scheduled_post(chat_id, interval_min, text, image=None, buttons=None):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    next_run = int(time.time()) + int(interval_min) * 60
+
+    cur.execute("""
+    INSERT INTO scheduled_posts(chat_id, interval_min, text, image, buttons, enabled, next_run)
+    VALUES (?,?,?,?,?,?,?)
+    """, (chat_id, interval_min, text, image, buttons, 1, next_run))
+
+    conn.commit()
+    conn.close()
+
+
+def get_scheduled_posts():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run
+    FROM scheduled_posts
+    WHERE enabled=1
+    """)
+    rows = cur.fetchall()
+
+    conn.close()
+    return rows
+
+
+def get_due_scheduled_posts(now_ts):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run
+    FROM scheduled_posts
+    WHERE enabled=1 AND next_run <= ?
+    """, (now_ts,))
+    rows = cur.fetchall()
+
+    conn.close()
+    return rows
+
+
+def update_scheduled_post_next_run(post_id, next_run):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    UPDATE scheduled_posts
+    SET next_run=?
+    WHERE id=?
+    """, (next_run, post_id))
+
+    conn.commit()
+    conn.close()
+
+
+def remove_scheduled_post(post_id):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM scheduled_posts WHERE id=?", (post_id,))
+    conn.commit()
+    conn.close()
