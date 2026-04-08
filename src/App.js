@@ -1,24 +1,12 @@
-async function register(){
-  await fetch("/register",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      username:document.getElementById("user").value,
-      password:document.getElementById("pass").value
-    })
-  })
-  alert("Registered")
-}
+function App(){
+  return (
+    <div style={{padding:20}}>
+      <h1>🚀 AI SaaS Dashboard</h1>
 
-async function login(){
-  let res = await fetch("/login",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      username:document.getElementById("user").value,
-      password:document.getElementById("pass").value
-    })
-  })
-  let data = await res.json()
-  alert(data.ok ? "Login OK":"Fail")
+      <Stats />
+      <AdminTable />
+      <GroupsTable />
+      <LogsTable />
+    </div>
+  )
 }
