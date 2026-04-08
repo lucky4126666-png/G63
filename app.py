@@ -172,9 +172,14 @@ async def keyword(m: types.Message):
             else:
                 await m.answer(reply, reply_markup=kb)
             return
+            
+# ===== HOME =====
+@app.get("/")
+def home():
+    return {"status": "running"}
 
 # ================= DASHBOARD =================
-@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/dashboard")
 def dashboard():
     groups = get_groups()
     admins = get_all_admins()
