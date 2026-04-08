@@ -163,12 +163,13 @@ async def rename(m: types.Message):
 
 # ================= KEYWORD =================
 @dp.message()
-async def keyword(m: types.Message):
+async def main_handler(m: types.Message):
     if not m.text:
         return
 
     text = m.text.lower()
 
+    # ===== KEYWORD =====
     for key, reply, image, buttons in keyword_cache:
         if key in text:
             kb = None
@@ -186,6 +187,11 @@ async def keyword(m: types.Message):
             else:
                 await m.answer(reply, reply_markup=kb)
             return
+
+    # ===== AI =====
+    if "ai " in text:
+        reply = await ask_ai(m.from_user.id, text)
+        await m.answer(reply)
             
 # ===== HOME =====
 @app.get("/")
