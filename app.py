@@ -67,10 +67,11 @@ def menu():
 
 # ===== HANDLER =====
 @dp.message()
-async def handler(msg: types.Message, state: FSMContext):
-    if not msg.text:
-        return
-
+if text.startswith("ai "):
+    from ai_service import ask_ai
+    reply = await ask_ai(text)
+    return await msg.reply(reply)
+    
     text = msg.text.strip()
     uid = msg.from_user.id
 
