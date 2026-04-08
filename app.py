@@ -114,7 +114,7 @@ async def list_admins_cmd(m: types.Message):
     admins = get_all_admins()
     if not admins:
         return await m.reply("Chưa có admin nào")
-
+    
     text = "📋 Danh sách admin:\n\n"
     for user_id, role in admins:
         text += f"- {user_id} | {role}\n"
@@ -265,6 +265,23 @@ async def rename_group(m: types.Message):
     if not group or not name or not number or not rule:
         return await m.reply("❌ 表单解析失败，请检查格式")
 
+    new_title = f"{group}{number}-{rule}{name}"
+
+    try:
+        # đổi tên nhóm
+        await bot.set_chat_title(m.chat.id, new_title)
+
+        # bắt buộc gửi thông báo trong group
+        try:
+            await m.answer(f"担保规则写入成功\n{new_title}")
+        except Exception as e:
+            # nếu không gửi được thì vẫn báo rõ lỗi
+            await m.reply("⚠️ 群名已修改，但机器人没有权限发送消息")
+            print("Send message failed:", e)
+
+    except Exception as e:
+        await m.reply("❌ 修改群名失败，请检查机器人权限")
+        print("Set chat title failed:", e)
     # ===== BUILD TÊN =====
     new_title = f"{group}{number}-{rule}{name}"
 
