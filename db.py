@@ -198,9 +198,3 @@ def get_setting(key):
 
     conn.close()
     return r[0] if r else None
-cur.execute("""
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-)
-""")
