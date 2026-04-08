@@ -48,12 +48,7 @@ async def get_text():
     return {"text": get_setting("start_text")}
 
 # ================= START =================
-@dp.message(lambda m: m.text == "/start")
-async def start(m: types.Message):
-    if m.chat.type != "private":
-        return
-
-    @dp.message(lambda m: m.new_chat_members)
+@dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
     chat = m.chat
     group_name = chat.title or "本群"
@@ -61,23 +56,20 @@ async def welcome(m: types.Message):
     for u in m.new_chat_members:
         name = u.full_name
 
-        text = f"""欢迎 {name} 来到 
-{group_name}
-
-公群i组1739-供押55888U鼎鑫一手水房/泰国韩国缅甸/一道料直通车公群（月结）
-交易前请先关注，担保流程【 @xinb 】
-
-1.交易前认准群老板和业务员头衔，先看清楚置顶的群规则和报备模版；
-2.交易前群老板方必须在公群内进行报备，客户确认报备内容，如客户没确认此报备视为无效报备；
-3.交易过程中有任何变动需要在群内保留记录或者重新报备；
-4.有任何问题可以联系新币24小时客服 @xbkf
-
-⚠️注意：主动私聊你的都是骗子！
-新币所有群（纠纷群、作业群、公群、专群）都由新币担保靓号拉群，
-一切交易必须群内进行,切勿私下交易,请按照担保流程进行交易。
-
-此用户是新币尊贵的VIP成员
-"""
+        text = (
+            f"欢迎 {name} 来到\n"
+            f"{group_name}\n\n"
+            "公群i组1739-供押55888U鼎鑫一手水房/泰国韩国缅甸/一道料直通车公群（月结）\n"
+            "交易前请先关注，担保流程【 @xinb 】\n\n"
+            "1.交易前认准群老板和业务员头衔，先看清楚置顶的群规则和报备模版；\n"
+            "2.交易前群老板方必须在公群内进行报备，客户确认报备内容，如客户没确认此报备视为无效报备；\n"
+            "3.交易过程中有任何变动需要在群内保留记录或者重新报备；\n"
+            "4.有任何问题可以联系新币24小时客服 @xbkf\n\n"
+            "⚠️注意：主动私聊你的都是骗子！\n"
+            "新币所有群（纠纷群、作业群、公群、专群）都由新币担保靓号拉群，\n"
+            "一切交易必须群内进行,切勿私下交易,请按照担保流程进行交易。\n\n"
+            "此用户是新币尊贵的VIP成员"
+        )
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -90,9 +82,9 @@ async def welcome(m: types.Message):
 
         # ===== CHECK ADMIN =====
         admins = await bot.get_chat_administrators(chat.id)
-        ids = [a.user.id for a in admins]
+        admin_ids = [a.user.id for a in admins]
 
-        if not any(i in ids for i in ADMIN_IDS):
+        if not any(i in admin_ids for i in ADMIN_IDS):
             await m.answer(
                 "⚠️ 风险提示，本群没有检测到新币管理员。\n"
                 "有交易风险，请联系 @xbkf"
