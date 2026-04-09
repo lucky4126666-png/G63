@@ -3,8 +3,10 @@ import time
 
 DB_NAME = "data.db"
 
+
 def get_conn():
     return sqlite3.connect(DB_NAME)
+
 
 def init_db():
     conn = get_conn()
@@ -59,13 +61,22 @@ def init_db():
         image TEXT,
         buttons TEXT,
         enabled INTEGER DEFAULT 1,
-        next_run INTEGER
+        next_run INTEGER,
+        last_message_ids TEXT
     )
     """)
+
+    # Migration cho DB cũ
+    try:
+        cur.execute("ALTER TABLE scheduled_posts ADD COLUMN last_message_ids TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
 
+
+# ================= ADMIN =================
 def add_admin(user_id, role="admin"):
     conn = get_conn()
     cur = conn.cursor()
@@ -77,12 +88,14 @@ def add_admin(user_id, role="admin"):
     conn.commit()
     conn.close()
 
+
 def remove_admin(user_id):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
+
 
 def get_admin(user_id):
     conn = get_conn()
@@ -92,6 +105,7 @@ def get_admin(user_id):
     conn.close()
     return r[0] if r else None
 
+
 def get_all_admins():
     conn = get_conn()
     cur = conn.cursor()
@@ -100,6 +114,8 @@ def get_all_admins():
     conn.close()
     return rows
 
+
+# ================= GROUP =================
 def save_group(chat_id, name):
     conn = get_conn()
     cur = conn.cursor()
@@ -111,6 +127,7 @@ def save_group(chat_id, name):
     conn.commit()
     conn.close()
 
+
 def get_groups():
     conn = get_conn()
     cur = conn.cursor()
@@ -119,6 +136,8 @@ def get_groups():
     conn.close()
     return rows
 
+
+# ================= KEYWORD =================
 def add_keyword(key, reply, image=None, buttons=None):
     conn = get_conn()
     cur = conn.cursor()
@@ -126,12 +145,13 @@ def add_keyword(key, reply, image=None, buttons=None):
     INSERT INTO keywords(key, reply, image, buttons)
     VALUES (?,?,?,?)
     ON CONFLICT(key) DO UPDATE SET
-    reply=excluded.reply,
-    image=excluded.image,
-    buttons=excluded.buttons
+        reply=excluded.reply,
+        image=excluded.image,
+        buttons=excluded.buttons
     """, (key, reply, image, buttons))
     conn.commit()
     conn.close()
+
 
 def get_keywords():
     conn = get_conn()
@@ -140,6 +160,7 @@ def get_keywords():
     rows = cur.fetchall()
     conn.close()
     return rows
+
 
 def get_keyword(key):
     conn = get_conn()
@@ -153,6 +174,7 @@ def get_keyword(key):
     conn.close()
     return row
 
+
 def remove_keyword(key):
     conn = get_conn()
     cur = conn.cursor()
@@ -160,6 +182,8 @@ def remove_keyword(key):
     conn.commit()
     conn.close()
 
+
+# ================= LOGS =================
 def log_action(user_id, action, chat_id):
     conn = get_conn()
     cur = conn.cursor()
@@ -170,6 +194,7 @@ def log_action(user_id, action, chat_id):
     conn.commit()
     conn.close()
 
+
 def get_logs():
     conn = get_conn()
     cur = conn.cursor()
@@ -178,6 +203,8 @@ def get_logs():
     conn.close()
     return rows
 
+
+# ================= SETTINGS =================
 def set_setting(key, value):
     conn = get_conn()
     cur = conn.cursor()
@@ -189,6 +216,7 @@ def set_setting(key, value):
     conn.commit()
     conn.close()
 
+
 def get_setting(key):
     conn = get_conn()
     cur = conn.cursor()
@@ -197,22 +225,25 @@ def get_setting(key):
     conn.close()
     return r[0] if r else None
 
-def add_scheduled_post(chat_id, interval_min, text, image=None, buttons=None):
+
+# ================= SCHEDULED POSTS =================
+def add_scheduled_post(chat_id, interval_min, text, image=None, buttons=None, last_message_ids=None):
     conn = get_conn()
     cur = conn.cursor()
     next_run = int(time.time()) + int(interval_min) * 60
     cur.execute("""
-    INSERT INTO scheduled_posts(chat_id, interval_min, text, image, buttons, enabled, next_run)
-    VALUES (?,?,?,?,?,?,?)
-    """, (chat_id, interval_min, text, image, buttons, 1, next_run))
+    INSERT INTO scheduled_posts(chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids)
+    VALUES (?,?,?,?,?,?,?,?)
+    """, (chat_id, interval_min, text, image, buttons, 1, next_run, last_message_ids))
     conn.commit()
     conn.close()
+
 
 def get_scheduled_posts():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run
+    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids
     FROM scheduled_posts
     WHERE enabled=1
     """)
@@ -220,17 +251,32 @@ def get_scheduled_posts():
     conn.close()
     return rows
 
+
 def get_due_scheduled_posts(now_ts):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run
+    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids
     FROM scheduled_posts
     WHERE enabled=1 AND next_run <= ?
     """, (now_ts,))
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+def get_scheduled_post(post_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids
+    FROM scheduled_posts
+    WHERE id=?
+    """, (post_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
 
 def update_scheduled_post_next_run(post_id, next_run):
     conn = get_conn()
@@ -243,12 +289,25 @@ def update_scheduled_post_next_run(post_id, next_run):
     conn.commit()
     conn.close()
 
+
+def update_scheduled_post_last_message_ids(post_id, last_message_ids):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    UPDATE scheduled_posts
+    SET last_message_ids=?
+    WHERE id=?
+    """, (last_message_ids, post_id))
+    conn.commit()
+    conn.close()
+
+
 def update_scheduled_post(post_id, interval_min=None, text=None, image=None, buttons=None, enabled=None):
     conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("""
-    SELECT chat_id, interval_min, text, image, buttons, enabled
+    SELECT chat_id, interval_min, text, image, buttons, enabled, last_message_ids
     FROM scheduled_posts
     WHERE id=?
     """, (post_id,))
@@ -258,7 +317,7 @@ def update_scheduled_post(post_id, interval_min=None, text=None, image=None, but
         conn.close()
         return False
 
-    chat_id, old_interval, old_text, old_image, old_buttons, old_enabled = row
+    chat_id, old_interval, old_text, old_image, old_buttons, old_enabled, old_last_message_ids = row
 
     new_interval = interval_min if interval_min is not None else old_interval
     new_text = text if text is not None else old_text
@@ -278,17 +337,6 @@ def update_scheduled_post(post_id, interval_min=None, text=None, image=None, but
     conn.close()
     return True
 
-def get_scheduled_post(post_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-    SELECT id, chat_id, interval_min, text, image, buttons, enabled, next_run
-    FROM scheduled_posts
-    WHERE id=?
-    """, (post_id,))
-    row = cur.fetchone()
-    conn.close()
-    return row
 
 def remove_scheduled_post(post_id):
     conn = get_conn()
