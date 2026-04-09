@@ -37,7 +37,8 @@ from db import (
     get_due_scheduled_posts,
     update_scheduled_post_next_run,
     update_scheduled_post,
-    remove_scheduled_post
+    remove_scheduled_post,
+    update_scheduled_post_last_message_ids
 )
 from ai_service import ask_ai
 
@@ -60,6 +61,7 @@ dp = Dispatcher(storage=MemoryStorage())
 # ===== INIT DB =====
 init_db()
 
+
 def init_super_admin():
     if SUPER_ADMIN_ID:
         try:
@@ -67,14 +69,16 @@ def init_super_admin():
         except Exception as e:
             print("init_super_admin error:", e)
 
+
 # ================= HELPER =================
 def is_cmd(message: types.Message, *cmds):
     if not message.text:
         return False
 
     txt = message.text.strip().split()[0].lower()
-    txt = txt.split("@")[0]  # bỏ @botname nếu có
+    txt = txt.split("@")[0]
     return txt in [c.lower() for c in cmds]
+
 
 async def is_allowed(chat_id, user_id):
     role = get_admin(user_id)
@@ -84,10 +88,12 @@ async def is_allowed(chat_id, user_id):
     admins = await bot.get_chat_administrators(chat_id)
     return any(a.user.id == user_id for a in admins)
 
+
 def normalize_key(key: str):
     if not key:
         return ""
     return re.sub(r"\s+", "", key).strip()
+
 
 def extract_target_user_id(message: types.Message):
     if message.reply_to_message and message.reply_to_message.from_user:
@@ -98,6 +104,7 @@ def extract_target_user_id(message: types.Message):
         return int(parts[1])
 
     return None
+
 
 def parse_block_fields(body: str):
     """
@@ -130,10 +137,12 @@ def parse_block_fields(body: str):
 
     return data
 
+
 def get_message_content(msg: types.Message):
     if not msg:
         return ""
     return (msg.text or msg.caption or "").strip()
+
 
 def get_replied_image_file_id(msg: types.Message):
     if not msg:
@@ -147,10 +156,11 @@ def get_replied_image_file_id(msg: types.Message):
 
     return None
 
+
 def build_buttons(buttons_text):
     """
     buttons: Nút 1|https://a.com;Nút 2|https://b.com;Nút 3|https://c.com;Nút 4|https://d.com
-    Tự chia 2 nút / hàng => 4 nút sẽ ra 2x2
+    Tự chia 2 nút / hàng
     """
     if not buttons_text:
         return None
@@ -179,6 +189,7 @@ def build_buttons(buttons_text):
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+
 def find_keyword_match(text):
     if not text:
         return None
@@ -201,30 +212,71 @@ def find_keyword_match(text):
 
     return None
 
-async def send_text_or_photo(chat_id, text, image=None, buttons=None):
+
+def extract_buttons_from_message(msg: types.Message):
+    if not msg or not getattr(msg, "reply_markup", None):
+        return None
+
+    items = []
+
+    try:
+        for row in msg.reply_markup.inline_keyboard:
+            for btn in row:
+                url = getattr(btn, "url", None)
+                text = getattr(btn, "text", None)
+                if text and url:
+                    items.append(f"{text}|{url}")
+    except Exception as e:
+        print("extract_buttons_from_message error:", e)
+
+    return ";".join(items) if items else None
+
+
+def extract_replied_post_content(msg: types.Message):
+    text = (msg.text or msg.caption or "").strip()
+    image = get_replied_image_file_id(msg)
+    buttons = extract_buttons_from_message(msg)
+    return text, image, buttons
+
+
+async def send_text_or_photo(chat_id, text="", image=None, buttons=None):
     kb = build_buttons(buttons)
+    sent_ids = []
+    text = (text or "").strip()
 
     if image:
         try:
-            if len(text) <= 1024:
-                await bot.send_photo(
+            if text and len(text) <= 1024:
+                msg = await bot.send_photo(
                     chat_id=chat_id,
                     photo=image,
                     caption=text,
                     reply_markup=kb
                 )
+                sent_ids.append(msg.message_id)
             else:
-                await bot.send_photo(
+                msg = await bot.send_photo(
                     chat_id=chat_id,
                     photo=image,
                     reply_markup=kb
                 )
-                await bot.send_message(chat_id, text)
+                sent_ids.append(msg.message_id)
+
+                if text:
+                    msg2 = await bot.send_message(chat_id, text)
+                    sent_ids.append(msg2.message_id)
+
         except Exception as e:
             print("send_photo failed:", e)
-            await bot.send_message(chat_id, text, reply_markup=kb)
+            if text:
+                msg = await bot.send_message(chat_id, text, reply_markup=kb)
+                sent_ids.append(msg.message_id)
     else:
-        await bot.send_message(chat_id, text, reply_markup=kb)
+        msg = await bot.send_message(chat_id, text, reply_markup=kb)
+        sent_ids.append(msg.message_id)
+
+    return sent_ids
+
 
 async def send_keyword_reply(message: types.Message, match: dict):
     try:
@@ -252,6 +304,7 @@ async def send_keyword_reply(message: types.Message, match: dict):
     except Exception as e:
         print("send_keyword_reply error:", e)
 
+
 async def auto_post_loop():
     while True:
         try:
@@ -259,10 +312,32 @@ async def auto_post_loop():
             due_posts = get_due_scheduled_posts(now_ts)
 
             for post in due_posts:
-                post_id, chat_id, interval_min, text, image, buttons, enabled, next_run = post
+                post_id, chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids = post
 
                 try:
-                    await send_text_or_photo(chat_id, text, image, buttons)
+                    # 1) Xoá bài cũ
+                    if last_message_ids:
+                        ids = [
+                            int(x) for x in str(last_message_ids).split(",")
+                            if x.strip().isdigit()
+                        ]
+
+                        for msg_id in ids:
+                            try:
+                                await bot.delete_message(
+                                    chat_id=chat_id,
+                                    message_id=msg_id
+                                )
+                            except Exception as e:
+                                print(f"delete old message failed post_id={post_id}, msg_id={msg_id}:", e)
+
+                    # 2) Gửi bài mới
+                    sent_ids = await send_text_or_photo(chat_id, text, image, buttons)
+
+                    # 3) Lưu message_id mới
+                    new_last_message_ids = ",".join(map(str, sent_ids))
+                    update_scheduled_post_last_message_ids(post_id, new_last_message_ids)
+
                 except Exception as e:
                     print(f"auto_post post_id={post_id} error:", e)
                 finally:
@@ -276,6 +351,7 @@ async def auto_post_loop():
             print("auto_post_loop error:", e)
 
         await asyncio.sleep(30)
+
 
 # ================= LIFESPAN =================
 @asynccontextmanager
@@ -299,6 +375,7 @@ async def lifespan(app: FastAPI):
         except:
             pass
 
+
 app = FastAPI(lifespan=lifespan)
 
 # ================= ADMIN COMMANDS =================
@@ -319,6 +396,7 @@ async def add_admin_cmd(m: types.Message):
     log_action(m.from_user.id, "add_admin", m.chat.id)
     await m.reply(f"✅ Đã cấp quyền admin cho user_id: {user_id}")
 
+
 @dp.message(lambda m: m.text and is_cmd(m, "/deladmin", "/demote"))
 async def del_admin_cmd(m: types.Message):
     if get_admin(m.from_user.id) != "super":
@@ -336,6 +414,7 @@ async def del_admin_cmd(m: types.Message):
     log_action(m.from_user.id, "del_admin", m.chat.id)
     await m.reply(f"✅ Đã gỡ quyền admin cho user_id: {user_id}")
 
+
 @dp.message(lambda m: m.text and is_cmd(m, "/admins"))
 async def list_admins_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
@@ -351,6 +430,7 @@ async def list_admins_cmd(m: types.Message):
 
     await m.reply(text, parse_mode="Markdown")
 
+
 @dp.message(lambda m: m.text and is_cmd(m, "/myrole"))
 async def myrole_cmd(m: types.Message):
     role = get_admin(m.from_user.id)
@@ -358,6 +438,7 @@ async def myrole_cmd(m: types.Message):
         await m.reply(f"👤 Quyền của bạn: {role}")
     else:
         await m.reply("👤 Bạn hiện chưa có quyền trong hệ thống")
+
 
 # ================= KEY COMMANDS =================
 @dp.message(lambda m: m.text and is_cmd(m, "/addkey"))
@@ -423,6 +504,7 @@ async def add_key_cmd(m: types.Message):
         print("add_key_cmd error:", e)
         await m.reply(f"❌ Lỗi khi lưu key: {e}")
 
+
 @dp.message(lambda m: m.text and is_cmd(m, "/editkey"))
 async def edit_key_cmd(m: types.Message):
     try:
@@ -483,6 +565,7 @@ async def edit_key_cmd(m: types.Message):
         print("edit_key_cmd error:", e)
         await m.reply(f"❌ Lỗi khi sửa key: {e}")
 
+
 @dp.message(lambda m: m.text and is_cmd(m, "/showkey"))
 async def show_key_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
@@ -507,6 +590,7 @@ async def show_key_cmd(m: types.Message):
     )
     await m.reply(text)
 
+
 @dp.message(lambda m: m.text and is_cmd(m, "/delkey"))
 async def del_key_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
@@ -523,6 +607,7 @@ async def del_key_cmd(m: types.Message):
     remove_keyword(key)
     log_action(m.from_user.id, "del_keyword", m.chat.id)
     await m.reply(f"✅ Đã xoá key: {key}")
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/keys"))
 async def list_keys_cmd(m: types.Message):
@@ -545,6 +630,7 @@ async def list_keys_cmd(m: types.Message):
 
     await m.reply(text, parse_mode="Markdown")
 
+
 # ================= HELP / GROUP / DELETE =================
 @dp.message(lambda m: m.text and is_cmd(m, "/help"))
 async def help_cmd(m: types.Message):
@@ -554,45 +640,51 @@ async def help_cmd(m: types.Message):
     text = (
         "📖 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>\n\n"
 
-        "👤 <b>QUYỀN HẠN</b>\n"
+        "👤 <b>1. QUYỀN HẠN</b>\n"
         "• /myrole — xem quyền của bạn\n"
         "• /admins — xem danh sách admin\n"
         "• /promote — cấp admin (chỉ super admin)\n"
         "• /demote — gỡ admin (chỉ super admin)\n\n"
 
-        "🏠 <b>GROUP</b>\n"
+        "🏠 <b>2. GROUP</b>\n"
         "• /groupid hoặc /id — xem ID group\n"
-        "• /lock hoặc 下课 — khóa nhóm\n"
-        "• /open hoặc 上课 — mở nhóm\n"
+        "• /lock hoặc 下课 — khóa group\n"
+        "• /open hoặc 上课 — mở group\n"
         "• ghimmes — ghim bài (reply vào bài)\n"
         "• /delmsg — xoá bài (reply vào bài)\n\n"
 
-        "🔑 <b>KEY</b>\n"
-        "• /addkey key|reply|image|buttons\n"
-        "• /editkey key|reply|image|buttons\n"
-        "• /showkey key\n"
-        "• /delkey key\n"
-        "• /keys\n\n"
+        "🔑 <b>3. KEY TỰ ĐỘNG TRẢ LỜI</b>\n"
+        "• /addkey — thêm key\n"
+        "• /editkey — sửa key\n"
+        "• /showkey key — xem 1 key\n"
+        "• /delkey key — xoá key\n"
+        "• /keys — danh sách key\n\n"
 
-        "🕒 <b>AUTO POST</b>\n"
-        "• /addpost\n"
-        "  interval: 30\n"
-        "  text: nội dung\n"
-        "  image: link ảnh hoặc file_id\n"
-        "  buttons: Nút 1|url;Nút 2|url;Nút 3|url;Nút 4|url\n"
-        "• /editpost 1\n"
-        "• /showpost 1\n"
-        "• /delpost 1\n"
-        "• /posts\n\n"
+        "🕒 <b>4. AUTO POST</b>\n"
+        "Cách dễ nhất:\n"
+        "1) Gửi 1 tin nhắn mẫu trong group\n"
+        "2) Reply vào tin nhắn đó\n"
+        "3) Gõ:\n"
+        "• /addpost 30\n\n"
+        "Bot sẽ tự lấy:\n"
+        "• văn bản\n"
+        "• hình ảnh\n"
+        "• nút URL nếu có\n\n"
+        "Lệnh khác:\n"
+        "• /posts — xem danh sách bài tự động\n"
+        "• /showpost 1 — xem chi tiết bài số 1\n"
+        "• /editpost 1 60 — sửa bài số 1, chạy mỗi 60 phút\n"
+        "• /delpost 1 — xoá bài số 1\n\n"
 
-        "🤖 <b>LƯU Ý</b>\n"
-        "• Trong group bot chỉ phản hồi key đã lưu\n"
-        "• Reply vào ảnh để bot tự lấy file_id ảnh\n"
-        "• Ảnh nên là link trực tiếp hoặc file_id Telegram\n"
-        "• Lệnh trong group giữ nguyên như cũ\n"
+        "🤖 <b>5. LƯU Ý</b>\n"
+        "• Bot sẽ tự xoá bài auto-post cũ trước khi đăng bài mới\n"
+        "• Ảnh nên là file Telegram hoặc link trực tiếp\n"
+        "• Nút chỉ hỗ trợ nút URL\n"
+        "• Trong group, bot chỉ phản hồi khi đúng lệnh hoặc đúng key"
     )
 
     await m.reply(text, parse_mode="HTML")
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/groupid", "/id"))
 async def group_id_cmd(m: types.Message):
@@ -600,6 +692,7 @@ async def group_id_cmd(m: types.Message):
         return await m.reply("Lệnh này dùng trong group để xem ID group.")
 
     await m.reply(f"📌 ID của group này là:\n`{m.chat.id}`", parse_mode="Markdown")
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/delmsg", "/delete", "/xoa"))
 async def delete_message_cmd(m: types.Message):
@@ -619,6 +712,7 @@ async def delete_message_cmd(m: types.Message):
         await m.reply("❌ Bot không có quyền xoá tin nhắn")
         print("delete_message_cmd error:", e)
 
+
 # ================= START =================
 @dp.message(lambda m: m.text and is_cmd(m, "/start"))
 async def start(m: types.Message):
@@ -632,6 +726,7 @@ async def start(m: types.Message):
     )
 
     await m.answer(text)
+
 
 # ================= BOT JOIN =================
 @dp.my_chat_member()
@@ -674,6 +769,7 @@ async def bot_join(e: types.ChatMemberUpdated):
     except Exception as e:
         print("bot_join error:", e)
 
+
 # ================= USER JOIN =================
 @dp.message(lambda m: m.new_chat_members)
 async def welcome(m: types.Message):
@@ -709,6 +805,7 @@ async def welcome(m: types.Message):
         except Exception as e:
             print("welcome send failed:", e)
 
+
 # ================= LOCK =================
 @dp.message(lambda m: m.text and is_cmd(m, "/lock", "下课"))
 async def lock_group(m: types.Message):
@@ -740,6 +837,7 @@ async def lock_group(m: types.Message):
     except Exception as e:
         print("lock_group send failed:", e)
 
+
 # ================= OPEN =================
 @dp.message(lambda m: m.text and is_cmd(m, "/open", "上课"))
 async def open_group(m: types.Message):
@@ -770,6 +868,7 @@ async def open_group(m: types.Message):
         )
     except Exception as e:
         print("open_group send failed:", e)
+
 
 # ================= RENAME GROUP (担保表单) =================
 @dp.message(lambda m: m.text and "担保表单" in m.text)
@@ -810,94 +909,91 @@ async def rename_group(m: types.Message):
         await m.reply("❌ 修改群名失败，请检查机器人权限")
         print("rename_group error:", e)
 
+
 # ================= AUTO POST =================
 @dp.message(lambda m: m.text and is_cmd(m, "/addpost"))
 async def add_post_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
         return await m.reply("❌ 无权限")
 
-    body = m.text[len("/addpost"):].strip()
-    data = parse_block_fields(body)
+    parts = m.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip().isdigit():
+        return await m.reply(
+            "Cách dùng:\n"
+            "/addpost 30\n\n"
+            "Reply vào tin nhắn mẫu rồi gõ lệnh này."
+        )
 
-    interval = data.get("interval")
-    text = data.get("text")
-    image = data.get("image")
-    buttons = data.get("buttons")
+    interval = int(parts[1].strip())
 
-    if not interval or not interval.isdigit():
-        return await m.reply("❌ interval phải là số phút\nVí dụ: interval: 30")
+    if not m.reply_to_message:
+        return await m.reply(
+            "❌ Bạn hãy reply vào tin nhắn mẫu rồi gõ:\n"
+            "/addpost 30"
+        )
 
-    if not text:
-        return await m.reply("❌ thiếu text")
+    text, image, buttons = extract_replied_post_content(m.reply_to_message)
+
+    if not text and not image:
+        return await m.reply("❌ Tin nhắn mẫu không có nội dung hợp lệ")
 
     add_scheduled_post(
         chat_id=m.chat.id,
-        interval_min=int(interval),
+        interval_min=interval,
         text=text,
         image=image,
-        buttons=buttons
+        buttons=buttons,
+        last_message_ids=None
     )
 
     log_action(m.from_user.id, "add_post", m.chat.id)
-    await m.reply(f"✅ Đã tạo bài tự động mỗi {interval} phút")
+    await m.reply(f"✅ Đã tạo auto-post mỗi {interval} phút, bot sẽ tự xoá bài cũ trước khi đăng bài mới")
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/editpost"))
 async def edit_post_cmd(m: types.Message):
     if get_admin(m.from_user.id) not in ("super", "admin"):
         return await m.reply("❌ 无权限")
 
-    parts = m.text.split(maxsplit=1)
-    if len(parts) < 2:
+    parts = m.text.split(maxsplit=2)
+    if len(parts) < 3:
         return await m.reply(
             "Cách dùng:\n"
-            "/editpost 1\n"
-            "interval: 60\n"
-            "text: Nội dung mới\n"
-            "image: https://img.com/new.jpg\n"
-            "buttons: Nút 1|https://a.com;Nút 2|https://b.com"
+            "/editpost 1 60\n\n"
+            "1 = ID bài\n"
+            "60 = số phút\n"
+            "Reply vào tin nhắn mẫu nếu muốn lấy nội dung mới."
         )
 
-    head = parts[1].strip().split(maxsplit=1)
-    if not head or not head[0].isdigit():
-        return await m.reply("❌ Thiếu ID bài viết\nVí dụ: /editpost 1")
+    if not parts[1].isdigit() or not parts[2].isdigit():
+        return await m.reply("Cách dùng:\n/editpost 1 60")
 
-    post_id = int(head[0])
-    body = parts[1].replace(str(post_id), "", 1).strip()
-
-    if not body:
-        return await m.reply(
-            "Cách dùng:\n"
-            "/editpost 1\n"
-            "interval: 60\n"
-            "text: Nội dung mới\n"
-            "image: https://img.com/new.jpg\n"
-            "buttons: Nút 1|https://a.com;Nút 2|https://b.com"
-        )
-
-    data = parse_block_fields(body)
-    interval = data.get("interval")
-    text = data.get("text")
-    image = data.get("image")
-    buttons = data.get("buttons")
-
-    if interval is not None and not interval.isdigit():
-        return await m.reply("❌ interval phải là số phút")
+    post_id = int(parts[1])
+    interval = int(parts[2])
 
     old = get_scheduled_post(post_id)
     if not old:
         return await m.reply("❌ Không tìm thấy bài viết tự động")
 
-    new_interval = int(interval) if interval else old[2]
-    new_text = text if text is not None else old[3]
-    new_image = image if image is not None else old[4]
-    new_buttons = buttons if buttons is not None else old[5]
+    # old = (id, chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids)
+    _, _, _, old_text, old_image, old_buttons, _, _, _ = old
+
+    if m.reply_to_message:
+        text, image, buttons = extract_replied_post_content(m.reply_to_message)
+        if not text and not image:
+            text = old_text
+            image = old_image
+        if buttons is None:
+            buttons = old_buttons
+    else:
+        text, image, buttons = old_text, old_image, old_buttons
 
     ok = update_scheduled_post(
         post_id=post_id,
-        interval_min=new_interval,
-        text=new_text,
-        image=new_image,
-        buttons=new_buttons
+        interval_min=interval,
+        text=text,
+        image=image,
+        buttons=buttons
     )
 
     if not ok:
@@ -905,6 +1001,7 @@ async def edit_post_cmd(m: types.Message):
 
     log_action(m.from_user.id, "edit_post", m.chat.id)
     await m.reply(f"✅ Đã cập nhật bài tự động ID: {post_id}")
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/posts"))
 async def list_posts_cmd(m: types.Message):
@@ -916,10 +1013,11 @@ async def list_posts_cmd(m: types.Message):
         return await m.reply("Chưa có bài tự động nào")
 
     text = "📋 Danh sách bài tự động:\n\n"
-    for post_id, chat_id, interval_min, post_text, image, buttons, enabled, next_run in posts:
+    for post_id, chat_id, interval_min, post_text, image, buttons, enabled, next_run, last_message_ids in posts:
         text += f"• ID: {post_id} | Chat: {chat_id} | {interval_min} phút\n"
 
     await m.reply(text)
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/showpost"))
 async def show_post_cmd(m: types.Message):
@@ -936,7 +1034,7 @@ async def show_post_cmd(m: types.Message):
     if not row:
         return await m.reply("❌ Không tìm thấy bài viết")
 
-    pid, chat_id, interval_min, text_content, image, buttons, enabled, next_run = row
+    pid, chat_id, interval_min, text_content, image, buttons, enabled, next_run, last_message_ids = row
 
     msg = (
         f"📌 ID: {pid}\n"
@@ -946,10 +1044,12 @@ async def show_post_cmd(m: types.Message):
         f"📝 Text: {text_content}\n"
         f"🖼 Image: {image or 'None'}\n"
         f"🔘 Buttons: {buttons or 'None'}\n"
+        f"🗂 Last messages: {last_message_ids or 'None'}\n"
         f"⏭ Next run: {next_run}"
     )
 
     await m.reply(msg)
+
 
 @dp.message(lambda m: m.text and is_cmd(m, "/delpost"))
 async def del_post_cmd(m: types.Message):
@@ -963,6 +1063,7 @@ async def del_post_cmd(m: types.Message):
     post_id = int(parts[1])
     remove_scheduled_post(post_id)
     await m.reply(f"✅ Đã xoá bài tự động ID: {post_id}")
+
 
 # ================= PIN MESSAGE =================
 @dp.message(lambda m: m.text and is_cmd(m, "ghimmes", "/ghimmes"))
@@ -983,6 +1084,7 @@ async def pin_message_cmd(m: types.Message):
     except Exception as e:
         await m.reply("❌ Bot không có quyền ghim bài viết")
         print("pin_message_cmd error:", e)
+
 
 # ================= GENERAL TEXT: KEY / ANTI / AI =================
 @dp.message()
@@ -1008,7 +1110,7 @@ async def handle_general_text(m: types.Message):
         return
 
     # 3) AI
-    if m.chat.type != "private" and "ai" not in m.text.lower():
+    if m.chat.type != "private" and not m.text.lower().startswith("ai"):
         return
 
     prompt = m.text
@@ -1020,22 +1122,27 @@ async def handle_general_text(m: types.Message):
     reply = await ask_ai(m.from_user.id, prompt)
     await m.reply(reply)
 
+
 # ================= DASHBOARD =================
 @app.get("/dashboard")
 def dashboard():
     return FileResponse("frontend/index.html")
 
+
 @app.get("/admin/list")
 async def admin_list():
     return {"data": get_all_admins()}
+
 
 @app.get("/admin/logs")
 async def logs():
     return {"data": get_logs()}
 
+
 @app.get("/admin/groups")
 async def groups():
     return {"data": get_groups()}
+
 
 # ================= WEBHOOK =================
 @app.post("/webhook")
@@ -1045,9 +1152,11 @@ async def webhook(req: Request):
     await dp.feed_update(bot, update)
     return {"ok": True}
 
+
 @app.get("/")
 def home():
     return {"status": "running"}
+
 
 # ================= RUN =================
 if __name__ == "__main__":
