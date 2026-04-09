@@ -818,7 +818,7 @@ async def lock_group(m: types.Message):
             permissions=types.ChatPermissions(can_send_messages=False)
         )
     except Exception as e:
-        await m.reply("❌ 机器人没有权限修改群发言权限")
+        await m.reply("❌ Bot không có quyền thay đổi quyền chat của group")
         print("lock_group error:", e)
         return
 
@@ -850,7 +850,7 @@ async def open_group(m: types.Message):
             permissions=types.ChatPermissions(can_send_messages=True)
         )
     except Exception as e:
-        await m.reply("❌ 机器人没有权限修改群发言权限")
+        await m.reply("❌ Bot không có quyền thay đổi quyền chat của group")
         print("open_group error:", e)
         return
 
@@ -937,7 +937,8 @@ async def add_post_cmd(m: types.Message):
     if not text and not image:
         return await m.reply("❌ Tin nhắn mẫu không có nội dung hợp lệ")
 
-    add_scheduled_post(
+    # Lưu bài và đăng ngay lần đầu
+    post_id = add_scheduled_post(
         chat_id=m.chat.id,
         interval_min=interval,
         text=text,
@@ -946,8 +947,14 @@ async def add_post_cmd(m: types.Message):
         last_message_ids=None
     )
 
+    try:
+        sent_ids = await send_text_or_photo(m.chat.id, text, image, buttons)
+        update_scheduled_post_last_message_ids(post_id, ",".join(map(str, sent_ids)))
+    except Exception as e:
+        print("initial auto-post failed:", e)
+
     log_action(m.from_user.id, "add_post", m.chat.id)
-    await m.reply(f"✅ Đã tạo auto-post mỗi {interval} phút, bot sẽ tự xoá bài cũ trước khi đăng bài mới")
+    await m.reply(f"✅ Đã tạo auto-post ID: {post_id}, bot sẽ tự xoá bài cũ trước khi đăng bài mới")
 
 
 @dp.message(lambda m: m.text and is_cmd(m, "/editpost"))
@@ -1110,7 +1117,7 @@ async def handle_general_text(m: types.Message):
         return
 
     # 3) AI
-    if m.chat.type != "private" and not m.text.lower().startswith("ai"):
+    if m.chat.type != "private" and not (m.text.lower().startswith("ai ") or m.text.lower() == "ai"):
         return
 
     prompt = m.text
