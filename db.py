@@ -235,8 +235,10 @@ def add_scheduled_post(chat_id, interval_min, text, image=None, buttons=None, la
     INSERT INTO scheduled_posts(chat_id, interval_min, text, image, buttons, enabled, next_run, last_message_ids)
     VALUES (?,?,?,?,?,?,?,?)
     """, (chat_id, interval_min, text, image, buttons, 1, next_run, last_message_ids))
+    post_id = cur.lastrowid
     conn.commit()
     conn.close()
+    return post_id
 
 
 def get_scheduled_posts():
